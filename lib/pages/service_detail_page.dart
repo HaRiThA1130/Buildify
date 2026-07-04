@@ -227,6 +227,23 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                         },
                       ),
                       const SizedBox(height: 48),
+                      _SecuritySection(
+                        requireApiKey: state.security.requireApiKey,
+                        apiKey: state.security.apiKey,
+                        onToggleRequire: (val) {
+                          ref.read(aiServerProvider.notifier).setRequireApiKey(val);
+                        },
+                        onRegenerate: () {
+                          ref.read(aiServerProvider.notifier).regenerateApiKey();
+                        },
+                        onCopyKey: () {
+                          Clipboard.setData(ClipboardData(text: state.security.apiKey));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('API Key copied to clipboard')),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 48),
                       _SystemStatusSection(
                         deviceLabel: device.cpuLabel.isNotEmpty
                             ? device.cpuLabel
@@ -802,6 +819,142 @@ class _MetaCell extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+class _SecuritySection extends StatelessWidget {
+  const _SecuritySection({
+    required this.requireApiKey,
+    required this.apiKey,
+    required this.onToggleRequire,
+    required this.onRegenerate,
+    required this.onCopyKey,
+  });
+
+  final bool requireApiKey;
+  final String apiKey;
+  final ValueChanged<bool> onToggleRequire;
+  final VoidCallback onRegenerate;
+  final VoidCallback onCopyKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('api security & auth'),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: _DetailPalette.background,
+            border: Border.all(
+              color: _DetailPalette.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _DetailPalette.surfaceContainerLow.withValues(alpha: 0.5),
+                  border: const Border(
+                    bottom: BorderSide(color: _DetailPalette.outlineVariant),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.key_outlined,
+                      size: 16,
+                      color: _DetailPalette.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'bearer token authentication',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 14,
+                        color: _DetailPalette.onSurface,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      requireApiKey ? 'REQUIRED' : 'OFF',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: requireApiKey
+                            ? _DetailPalette.primary
+                            : _DetailPalette.statusSuspended,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Switch(
+                      value: requireApiKey,
+                      onChanged: onToggleRequire,
+                      activeThumbColor: _DetailPalette.primary,
+                      activeTrackColor: _DetailPalette.outlineVariant,
+                    ),
+                  ],
+                ),
+              ),
+              if (requireApiKey)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Include header: Authorization: Bearer <key>',
+                        style: GoogleFonts.spaceMono(
+                          fontSize: 10,
+                          color: _DetailPalette.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _DetailPalette.surfaceContainerLowest,
+                          border: Border.all(color: _DetailPalette.outlineVariant),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                apiKey.isEmpty ? 'Generating key...' : apiKey,
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 12,
+                                  color: _DetailPalette.primary,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: onCopyKey,
+                              icon: const Icon(Icons.content_copy, size: 16),
+                              color: _DetailPalette.onSurfaceVariant,
+                              tooltip: 'Copy API Key',
+                            ),
+                            IconButton(
+                              onPressed: onRegenerate,
+                              icon: const Icon(Icons.refresh, size: 16),
+                              color: _DetailPalette.onSurfaceVariant,
+                              tooltip: 'Regenerate Key',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
