@@ -384,7 +384,7 @@ class _DetailPalette {
   static const surfaceContainer = Color(0xFF20201E);
   static const surfaceContainerLow = Color(0xFF1C1C1A);
   static const surfaceContainerLowest = Color(0xFF0E0E0D);
-  static const successGreen = Color(0xFF003924);
+  static const successGreen = Color(0xFF10B981);
   static const statusSuspended = Color(0xFF897671);
   static const terminalBg = Color(0xFF0E0E0D);
 }
@@ -985,11 +985,14 @@ class _SecuritySection extends StatelessWidget {
                       color: _DetailPalette.onSurfaceVariant,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      'bearer token authentication',
-                      style: GoogleFonts.spaceMono(
-                        fontSize: 14,
-                        color: _DetailPalette.onSurface,
+                    Expanded(
+                      child: Text(
+                        'bearer token authentication',
+                        style: GoogleFonts.spaceMono(
+                          fontSize: 14,
+                          color: _DetailPalette.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const Spacer(),
@@ -1178,9 +1181,12 @@ class _HealthThresholdsSection extends StatelessWidget {
                   children: [
                     const Icon(Icons.thermostat_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
                     const SizedBox(width: 8),
-                    Text(
-                      'stop on thermal warning',
-                      style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                    Expanded(
+                      child: Text(
+                        'stop on thermal warning',
+                        style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const Spacer(),
                     Text(
@@ -1277,9 +1283,12 @@ class _RuntimeControlsSection extends StatelessWidget {
                   children: [
                     const Icon(Icons.battery_saver_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
                     const SizedBox(width: 8),
-                    Text(
-                      'low-power mode',
-                      style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                    Expanded(
+                      child: Text(
+                        'low-power mode',
+                        style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const Spacer(),
                     Text(
@@ -1389,9 +1398,12 @@ class _NetworkEndpointsSection extends StatelessWidget {
                   children: [
                     const Icon(Icons.router_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
                     const SizedBox(width: 8),
-                    Text(
-                      'server status: ${isRunning ? 'online' : 'offline'}',
-                      style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                    Expanded(
+                      child: Text(
+                        'server status: ${isRunning ? 'online' : 'offline'}',
+                        style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const Spacer(),
                     Text(
@@ -1450,9 +1462,12 @@ class _NetworkEndpointsSection extends StatelessWidget {
                             children: [
                               Row(
                                 children: [
-                                  Text(
-                                    'tailscale vpn endpoint (private mesh lan)',
-                                    style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                                  Expanded(
+                                    child: Text(
+                                      'tailscale vpn endpoint (private mesh lan)',
+                                      style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                   const SizedBox(width: 6),
                                   Icon(
@@ -1498,9 +1513,12 @@ class _NetworkEndpointsSection extends StatelessWidget {
                             children: [
                               Row(
                                 children: [
-                                  Text(
-                                    'cloudflare quick tunnel (public https url)',
-                                    style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                                  Expanded(
+                                    child: Text(
+                                      'cloudflare quick tunnel (public https url)',
+                                      style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                   const SizedBox(width: 6),
                                   Icon(
@@ -1517,6 +1535,7 @@ class _NetworkEndpointsSection extends StatelessWidget {
                                   fontSize: 13,
                                   color: hasTunnel ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
                                 ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -1760,10 +1779,9 @@ class _ActiveRuntimeSection extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: 8,
-                      height: 8,
+                    _PulseStatusIndicator(
                       color: statusColor,
+                      pulse: isRunning || isStarting,
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -2227,6 +2245,99 @@ class _SectionLabel extends StatelessWidget {
         letterSpacing: 2,
         color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.5),
       ),
+    );
+  }
+}
+
+class _PulseStatusIndicator extends StatefulWidget {
+  const _PulseStatusIndicator({required this.color, this.pulse = false});
+  final Color color;
+  final bool pulse;
+
+  @override
+  State<_PulseStatusIndicator> createState() => _PulseStatusIndicatorState();
+}
+
+class _PulseStatusIndicatorState extends State<_PulseStatusIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    if (widget.pulse) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PulseStatusIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pulse && !oldWidget.pulse) {
+      _controller.repeat();
+    } else if (!widget.pulse && oldWidget.pulse) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.pulse) {
+      return Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: widget.color,
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Transform.scale(
+              scale: 1.0 + _controller.value * 1.5,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.color.withValues(alpha: (1.0 - _controller.value) * 0.4),
+                ),
+              ),
+            ),
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color,
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.color.withValues(alpha: 0.4),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
