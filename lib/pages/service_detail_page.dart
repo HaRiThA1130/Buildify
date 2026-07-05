@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/ai_server_models.dart';
 import '../providers/ai_server_provider.dart';
+import '../screens/model_store_screen.dart';
+import '../screens/self_test_screen.dart';
 
 /// Project service detail — matches the Project---X HTML screen.
 class ServiceDetailPage extends ConsumerStatefulWidget {
@@ -244,6 +246,68 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                         },
                       ),
                       const SizedBox(height: 48),
+                      _HealthThresholdsSection(
+                        idleTimeoutMinutes: state.security.idleTimeoutMinutes,
+                        batteryStopPercent: state.security.batteryStopPercent,
+                        thermalStop: state.security.thermalStop,
+                        onIdleChanged: (v) => ref.read(aiServerProvider.notifier).setIdleTimeoutMinutes(v.round()),
+                        onBatteryChanged: (v) => ref.read(aiServerProvider.notifier).setBatteryStopPercent(v.round()),
+                        onThermalChanged: (v) => ref.read(aiServerProvider.notifier).setThermalStop(v),
+                      ),
+                      const SizedBox(height: 48),
+                      _RuntimeControlsSection(
+                        lowPowerMode: state.lowPowerMode,
+                        tokenLimit: state.tokenLimit,
+                        temperature: state.temperature,
+                        onLowPowerChanged: (v) => ref.read(aiServerProvider.notifier).setLowPowerMode(v),
+                        onTokenLimitChanged: (v) => ref.read(aiServerProvider.notifier).setTokenLimit(v),
+                        onTemperatureChanged: (v) => ref.read(aiServerProvider.notifier).setTemperature(v),
+                      ),
+                      const SizedBox(height: 48),
+                      _NetworkEndpointsSection(
+                        port: state.port,
+                        tailscaleIp: state.device.tailscaleIp,
+                        tunnel: state.tunnel,
+                        isRunning: state.status == ServerStatus.running,
+                        onStartTunnel: () async {
+                          final ok = await ref.read(aiServerProvider.notifier).startTunnel();
+                          if (!ok && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Start the AI server before enabling Cloudflare tunnel'),
+                              ),
+                            );
+                          }
+                        },
+                        onStopTunnel: () {
+                          ref.read(aiServerProvider.notifier).stopTunnel();
+                        },
+                        onCopyApiUrl: () {
+                          Clipboard.setData(ClipboardData(text: 'http://127.0.0.1:${state.port}/v1'));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Local API URL copied to clipboard')),
+                          );
+                        },
+                        onCopyTailscaleUrl: () {
+                          final ip = state.device.tailscaleIp;
+                          if (ip != null) {
+                            Clipboard.setData(ClipboardData(text: 'http://$ip:${state.port}'));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Tailscale URL copied to clipboard')),
+                            );
+                          }
+                        },
+                        onCopyTunnelUrl: () {
+                          final url = state.tunnel.publicUrl;
+                          if (url != null) {
+                            Clipboard.setData(ClipboardData(text: url));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Cloudflare Tunnel URL copied to clipboard')),
+                            );
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 48),
                       _SystemStatusSection(
                         deviceLabel: device.cpuLabel.isNotEmpty
                             ? device.cpuLabel
@@ -426,8 +490,18 @@ class _DetailTopBar extends StatelessWidget {
           ),
           const Spacer(),
           IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.person_outline, color: _DetailPalette.onSurface),
+            tooltip: 'Model Store',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ModelStoreScreen()),
+            ),
+            icon: const Icon(Icons.storefront_outlined, color: _DetailPalette.onSurface),
+          ),
+          IconButton(
+            tooltip: 'Self-Test Diagnostics',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SelfTestScreen()),
+            ),
+            icon: const Icon(Icons.biotech_outlined, color: _DetailPalette.onSurface),
           ),
         ],
       ),
@@ -959,6 +1033,498 @@ class _SecuritySection extends StatelessWidget {
   }
 }
 
+class _DetailSliderRow extends StatelessWidget {
+  const _DetailSliderRow({
+    required this.label,
+    required this.valueLabel,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String valueLabel;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.spaceMono(fontSize: 12, color: _DetailPalette.onSurface),
+            ),
+            const Spacer(),
+            Text(
+              valueLabel,
+              style: GoogleFonts.spaceMono(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: _DetailPalette.primary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: _DetailPalette.primary,
+            inactiveTrackColor: _DetailPalette.outlineVariant,
+            thumbColor: _DetailPalette.primary,
+            overlayColor: _DetailPalette.primary.withValues(alpha: 0.1),
+            trackHeight: 2,
+          ),
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HealthThresholdsSection extends StatelessWidget {
+  const _HealthThresholdsSection({
+    required this.idleTimeoutMinutes,
+    required this.batteryStopPercent,
+    required this.thermalStop,
+    required this.onIdleChanged,
+    required this.onBatteryChanged,
+    required this.onThermalChanged,
+  });
+
+  final int idleTimeoutMinutes;
+  final int batteryStopPercent;
+  final bool thermalStop;
+  final ValueChanged<double> onIdleChanged;
+  final ValueChanged<double> onBatteryChanged;
+  final ValueChanged<bool> onThermalChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('health checks & auto-stop'),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: _DetailPalette.background,
+            border: Border.all(color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _DetailPalette.surfaceContainerLow.withValues(alpha: 0.5),
+                  border: const Border(bottom: BorderSide(color: _DetailPalette.outlineVariant)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.thermostat_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Text(
+                      'stop on thermal warning',
+                      style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                    ),
+                    const Spacer(),
+                    Text(
+                      thermalStop ? 'ACTIVE' : 'OFF',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: thermalStop ? _DetailPalette.primary : _DetailPalette.statusSuspended,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Switch(
+                      value: thermalStop,
+                      onChanged: onThermalChanged,
+                      activeThumbColor: _DetailPalette.primary,
+                      activeTrackColor: _DetailPalette.outlineVariant,
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _DetailSliderRow(
+                      label: 'idle timeout',
+                      valueLabel: idleTimeoutMinutes == 0 ? 'Off' : '$idleTimeoutMinutes min',
+                      value: idleTimeoutMinutes.toDouble(),
+                      min: 0,
+                      max: 60,
+                      divisions: 12,
+                      onChanged: onIdleChanged,
+                    ),
+                    const SizedBox(height: 16),
+                    _DetailSliderRow(
+                      label: 'stop below battery',
+                      valueLabel: batteryStopPercent == 0 ? 'Off' : '$batteryStopPercent%',
+                      value: batteryStopPercent.toDouble(),
+                      min: 0,
+                      max: 50,
+                      divisions: 10,
+                      onChanged: onBatteryChanged,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RuntimeControlsSection extends StatelessWidget {
+  const _RuntimeControlsSection({
+    required this.lowPowerMode,
+    required this.tokenLimit,
+    required this.temperature,
+    required this.onLowPowerChanged,
+    required this.onTokenLimitChanged,
+    required this.onTemperatureChanged,
+  });
+
+  final bool lowPowerMode;
+  final int tokenLimit;
+  final double temperature;
+  final ValueChanged<bool> onLowPowerChanged;
+  final ValueChanged<double> onTokenLimitChanged;
+  final ValueChanged<double> onTemperatureChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('ai runtime controls & parameters'),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: _DetailPalette.background,
+            border: Border.all(color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _DetailPalette.surfaceContainerLow.withValues(alpha: 0.5),
+                  border: const Border(bottom: BorderSide(color: _DetailPalette.outlineVariant)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.battery_saver_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Text(
+                      'low-power mode',
+                      style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                    ),
+                    const Spacer(),
+                    Text(
+                      lowPowerMode ? 'ON' : 'OFF',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: lowPowerMode ? _DetailPalette.primary : _DetailPalette.statusSuspended,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Switch(
+                      value: lowPowerMode,
+                      onChanged: onLowPowerChanged,
+                      activeThumbColor: _DetailPalette.primary,
+                      activeTrackColor: _DetailPalette.outlineVariant,
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _DetailSliderRow(
+                      label: 'token limit (max tokens)',
+                      valueLabel: '$tokenLimit',
+                      value: tokenLimit.toDouble(),
+                      min: 32,
+                      max: 256,
+                      divisions: 7,
+                      onChanged: onTokenLimitChanged,
+                    ),
+                    const SizedBox(height: 16),
+                    _DetailSliderRow(
+                      label: 'temperature (creativity)',
+                      valueLabel: temperature.toStringAsFixed(1),
+                      value: temperature,
+                      min: 0.1,
+                      max: 1.2,
+                      divisions: 11,
+                      onChanged: onTemperatureChanged,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NetworkEndpointsSection extends StatelessWidget {
+  const _NetworkEndpointsSection({
+    required this.port,
+    required this.tailscaleIp,
+    required this.tunnel,
+    required this.isRunning,
+    required this.onStartTunnel,
+    required this.onStopTunnel,
+    required this.onCopyApiUrl,
+    required this.onCopyTailscaleUrl,
+    required this.onCopyTunnelUrl,
+  });
+
+  final int port;
+  final String? tailscaleIp;
+  final TunnelState tunnel;
+  final bool isRunning;
+  final VoidCallback onStartTunnel;
+  final VoidCallback onStopTunnel;
+  final VoidCallback onCopyApiUrl;
+  final VoidCallback onCopyTailscaleUrl;
+  final VoidCallback onCopyTunnelUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final tsIp = tailscaleIp;
+    final hasTs = tsIp != null && tsIp.isNotEmpty;
+    final pubUrl = tunnel.publicUrl;
+    final hasTunnel = pubUrl != null && pubUrl.isNotEmpty;
+    final isTunnelRunning = tunnel.status == TunnelStatus.running;
+    final isTunnelStarting = tunnel.status == TunnelStatus.starting;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('network, tunnels & endpoints'),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: _DetailPalette.background,
+            border: Border.all(color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _DetailPalette.surfaceContainerLow.withValues(alpha: 0.5),
+                  border: const Border(bottom: BorderSide(color: _DetailPalette.outlineVariant)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.router_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Text(
+                      'server status: ${isRunning ? 'online' : 'offline'}',
+                      style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'PORT $port',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: _DetailPalette.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 1. Local API Endpoint
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'local api endpoint (same device)',
+                                style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'http://127.0.0.1:$port/v1',
+                                style: GoogleFonts.spaceMono(fontSize: 13, color: _DetailPalette.primary),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: onCopyApiUrl,
+                          icon: const Icon(Icons.content_copy, size: 16),
+                          color: _DetailPalette.onSurfaceVariant,
+                          tooltip: 'Copy Local API URL',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(height: 1, color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+                    const SizedBox(height: 16),
+                    // 2. Tailscale VPN Endpoint
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'tailscale vpn endpoint (private mesh lan)',
+                                    style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    hasTs ? Icons.check_circle : Icons.offline_bolt_outlined,
+                                    size: 12,
+                                    color: hasTs ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                hasTs ? 'http://$tsIp:$port' : 'tailscale not detected / offline',
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 13,
+                                  color: hasTs ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Access from your laptop/PC anywhere without exposing to public internet.',
+                                style: GoogleFonts.spaceMono(fontSize: 9, color: _DetailPalette.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: hasTs ? onCopyTailscaleUrl : null,
+                          icon: const Icon(Icons.content_copy, size: 16),
+                          color: _DetailPalette.onSurfaceVariant,
+                          tooltip: 'Copy Tailscale URL',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(height: 1, color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+                    const SizedBox(height: 16),
+                    // 3. Cloudflare Quick Tunnel
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'cloudflare quick tunnel (public https url)',
+                                    style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    isTunnelRunning ? Icons.cloud_done : Icons.cloud_off_outlined,
+                                    size: 12,
+                                    color: isTunnelRunning ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                hasTunnel ? pubUrl : (isTunnelStarting ? 'starting tunnel...' : 'tunnel offline (no public url)'),
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 13,
+                                  color: hasTunnel ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Free public HTTPS URL via trycloudflare.com. Anyone on the internet can access.',
+                                style: GoogleFonts.spaceMono(fontSize: 9, color: _DetailPalette.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: hasTunnel ? onCopyTunnelUrl : null,
+                          icon: const Icon(Icons.content_copy, size: 16),
+                          color: _DetailPalette.onSurfaceVariant,
+                          tooltip: 'Copy Cloudflare Tunnel URL',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: isTunnelRunning ? _DetailPalette.statusSuspended : _DetailPalette.primary,
+                              foregroundColor: isTunnelRunning ? Colors.white : _DetailPalette.onPrimary,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: isTunnelStarting ? null : (isTunnelRunning ? onStopTunnel : onStartTunnel),
+                            icon: Icon(isTunnelRunning ? Icons.stop_circle_outlined : Icons.cloud_upload_outlined, size: 16),
+                            label: Text(
+                              isTunnelStarting ? 'STARTING TUNNEL...' : (isTunnelRunning ? 'STOP CLOUDFLARE TUNNEL' : 'START CLOUDFLARE TUNNEL'),
+                              style: GoogleFonts.spaceMono(fontSize: 11, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SystemStatusSection extends StatelessWidget {
   const _SystemStatusSection({
     required this.deviceLabel,
@@ -1249,7 +1815,18 @@ class _RuntimeLogsSection extends StatelessWidget {
         Row(
           children: [
             const Expanded(child: _SectionLabel('runtime logs')),
-            IconButton(onPressed: () {}, icon: const Icon(Icons.download_outlined, size: 20)),
+            IconButton(
+              tooltip: 'Copy logs',
+              onPressed: () {
+                if (logs.isEmpty) return;
+                final text = logs.map((l) => '${l.time} ${l.instance} ${l.message}').join('\n');
+                Clipboard.setData(ClipboardData(text: text));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Logs copied to clipboard')),
+                );
+              },
+              icon: const Icon(Icons.copy_outlined, size: 18),
+            ),
             IconButton(
               onPressed: onToggleFullscreen,
               icon: Icon(
