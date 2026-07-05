@@ -1,20 +1,25 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/ai_server_models.dart';
+import '../providers/ai_server_provider.dart';
+import 'service_detail_page.dart';
+
 /// Projects dashboard — visual match for the buildify HTML mock.
-class ProjectsHomePage extends StatefulWidget {
+class ProjectsHomePage extends ConsumerStatefulWidget {
   const ProjectsHomePage({super.key, this.onRunAiModel});
 
   /// Navigates to the existing AI server shell without coupling imports.
   final VoidCallback? onRunAiModel;
 
   @override
-  State<ProjectsHomePage> createState() => _ProjectsHomePageState();
+  ConsumerState<ProjectsHomePage> createState() => _ProjectsHomePageState();
 }
 
-class _ProjectsHomePageState extends State<ProjectsHomePage>
+class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
     with TickerProviderStateMixin {
   static const _filters = ['all', 'services', 'env groups'];
 
@@ -23,51 +28,79 @@ class _ProjectsHomePageState extends State<ProjectsHomePage>
   final _searchController = TextEditingController();
   late final AnimationController _meshController;
 
-  final _services = const [
-    _ServiceData(
-      name: 'flash_news_ai',
-      statusIcon: Icons.error_outline,
-      statusIconColor: Color(0xFFAF1D27),
-      statusLabel: 'failed deploy',
-      statusColor: Color(0xFFAF1D27),
-      version: 'v1.4.2-alpha',
-      runtime: 'python 3',
-      region: 'oregon',
-      updated: '13d ago',
-      actionLabel: 'logs / metrics / terminal',
-      actionIcon: Icons.open_in_new,
-      actionPrimary: false,
-    ),
-    _ServiceData(
-      name: 'paperstudio',
-      statusIcon: Icons.pause_circle_outline,
-      statusIconColor: Color(0xFF897671),
-      statusLabel: 'suspended by you',
-      statusColor: Color(0xFF897671),
-      version: 'v0.9.8',
-      runtime: 'docker',
-      region: 'oregon',
-      updated: '2mo ago',
-      actionLabel: 'resume service',
-      actionIcon: Icons.play_arrow,
-      actionPrimary: true,
-    ),
-    _ServiceData(
-      name: 'project---x',
-      statusIcon: Icons.check_circle_outline,
-      statusIconColor: Color(0xFF003924),
-      statusLabel: 'deployed',
-      statusColor: Color(0xFF003924),
-      version: 'main-b234a',
-      runtime: 'docker',
-      region: 'oregon',
-      updated: 'active',
-      actionLabel: 'active since 4d',
-      actionIcon: Icons.insights_outlined,
-      actionPrimary: false,
-      metadataBorderBright: true,
-    ),
-  ];
+  List<_ServiceData> getServices(AiServerState state) {
+    final isRunning = state.status == ServerStatus.running;
+    final isStarting = state.status == ServerStatus.starting;
+
+    final selectedModel = state.models.firstWhere(
+      (m) => m.id == state.selectedModelId,
+      orElse: () => state.models.isNotEmpty
+          ? state.models.first
+          : const ModelProfile(
+              id: 'llama-3-8b',
+              name: 'Llama 3 8B',
+              fileName: 'llama-3-8b.gguf',
+              downloadUrl: '',
+              sizeLabel: '4.7 GB',
+              speed: 'Fast',
+              quality: 'High',
+              requiredRamGb: 6,
+              description: 'Llama 3 model',
+            ),
+    );
+
+    return [
+      const _ServiceData(
+        name: 'flash_news_ai',
+        statusIcon: Icons.error_outline,
+        statusIconColor: Color(0xFFAF1D27),
+        statusLabel: 'failed deploy',
+        statusColor: Color(0xFFAF1D27),
+        version: 'v1.4.2-alpha',
+        runtime: 'python 3',
+        region: 'oregon',
+        updated: '13d ago',
+        actionLabel: 'logs / metrics / terminal',
+        actionIcon: Icons.open_in_new,
+        actionPrimary: false,
+      ),
+      const _ServiceData(
+        name: 'paperstudio',
+        statusIcon: Icons.pause_circle_outline,
+        statusIconColor: Color(0xFF897671),
+        statusLabel: 'suspended by you',
+        statusColor: Color(0xFF897671),
+        version: 'v0.9.8',
+        runtime: 'docker',
+        region: 'oregon',
+        updated: '2mo ago',
+        actionLabel: 'resume service',
+        actionIcon: Icons.play_arrow,
+        actionPrimary: true,
+      ),
+      _ServiceData(
+        name: 'project---x',
+        statusIcon: isRunning
+            ? Icons.check_circle_outline
+            : (isStarting ? Icons.sync : Icons.offline_bolt_outlined),
+        statusIconColor: isRunning
+            ? const Color(0xFF10B981)
+            : (isStarting ? const Color(0xFFF59E0B) : const Color(0xFF9CA3AF)),
+        statusLabel: isRunning ? 'online' : (isStarting ? 'starting' : 'offline'),
+        statusColor: isRunning
+            ? const Color(0xFF065F46)
+            : (isStarting ? const Color(0xFF78350F) : const Color(0xFF374151)),
+        version: selectedModel.name.toLowerCase(),
+        runtime: 'llama.cpp',
+        region: 'localhost:${state.port}',
+        updated: isRunning ? 'active' : 'stopped',
+        actionLabel: isRunning ? 'active (tap to manage)' : 'start server (tap to manage)',
+        actionIcon: isRunning ? Icons.insights_outlined : Icons.play_arrow,
+        actionPrimary: !isRunning,
+        metadataBorderBright: isRunning,
+      ),
+    ];
+  }
 
   @override
   void initState() {
@@ -86,10 +119,10 @@ class _ProjectsHomePageState extends State<ProjectsHomePage>
     super.dispose();
   }
 
-  List<_ServiceData> get _filteredServices {
+  List<_ServiceData> _filteredServices(List<_ServiceData> services) {
     final q = _searchController.text.trim().toLowerCase();
-    if (q.isEmpty) return _services;
-    return _services.where((s) => s.name.toLowerCase().contains(q)).toList();
+    if (q.isEmpty) return services;
+    return services.where((s) => s.name.toLowerCase().contains(q)).toList();
   }
 
   void _openNewServiceModal() {
@@ -109,6 +142,7 @@ class _ProjectsHomePageState extends State<ProjectsHomePage>
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(aiServerProvider);
     final horizontalPadding = MediaQuery.sizeOf(context).width >= 768 ? 32.0 : 16.0;
 
     return Theme(
@@ -154,7 +188,7 @@ class _ProjectsHomePageState extends State<ProjectsHomePage>
                               onToggle: () => setState(
                                 () => _productionExpanded = !_productionExpanded,
                               ),
-                              services: _filteredServices,
+                              services: _filteredServices(getServices(state)),
                               onNewService: _openNewServiceModal,
                             ),
                           ],
@@ -525,170 +559,188 @@ class _ServiceCardState extends State<_ServiceCard> {
   Widget build(BuildContext context) {
     final data = widget.data;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() {
-        _hovered = false;
-        _glowPosition = null;
-      }),
-      child: Listener(
-        onPointerHover: (e) => setState(() => _glowPosition = e.localPosition),
-        onPointerMove: (e) => setState(() => _glowPosition = e.localPosition),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              decoration: BoxDecoration(
-                color: _ProjectsPalette.surfaceContainer.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-              ),
-              child: Stack(
-                children: [
-                  if (_glowPosition != null && _hovered)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: RadialGradient(
-                              center: Alignment(
-                                (_glowPosition!.dx / 320) * 2 - 1,
-                                (_glowPosition!.dy / 200) * 2 - 1,
+    return GestureDetector(
+      onTap: () {
+        if (data.name == 'project---x') {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const ServiceDetailPage(),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${data.name} is a demo/mock service'),
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        }
+      },
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() {
+          _hovered = false;
+          _glowPosition = null;
+        }),
+        child: Listener(
+          onPointerHover: (e) => setState(() => _glowPosition = e.localPosition),
+          onPointerMove: (e) => setState(() => _glowPosition = e.localPosition),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _ProjectsPalette.surfaceContainer.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                ),
+                child: Stack(
+                  children: [
+                    if (_glowPosition != null && _hovered)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: RadialGradient(
+                                center: Alignment(
+                                  (_glowPosition!.dx / 320) * 2 - 1,
+                                  (_glowPosition!.dy / 200) * 2 - 1,
+                                ),
+                                radius: 0.45,
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.1),
+                                  Colors.transparent,
+                                ],
                               ),
-                              radius: 0.45,
-                              colors: [
-                                Colors.white.withValues(alpha: 0.1),
-                                Colors.transparent,
-                              ],
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final stacked = constraints.maxWidth < 520;
-                            final meta = _MetadataGrid(
-                              runtime: data.runtime,
-                              region: data.region,
-                              updated: data.updated,
-                              brightBorder: data.metadataBorderBright,
-                            );
-                            final info = Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(data.statusIcon, color: data.statusIconColor, size: 24),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      data.name,
-                                      style: GoogleFonts.spaceMono(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -0.36,
-                                        color: _ProjectsPalette.onSurface,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: data.statusColor,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        data.statusLabel,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final stacked = constraints.maxWidth < 520;
+                              final meta = _MetadataGrid(
+                                runtime: data.runtime,
+                                region: data.region,
+                                updated: data.updated,
+                                brightBorder: data.metadataBorderBright,
+                              );
+                              final info = Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(data.statusIcon, color: data.statusIconColor, size: 24),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        data.name,
                                         style: GoogleFonts.spaceMono(
-                                          fontSize: 10,
+                                          fontSize: 18,
                                           fontWeight: FontWeight.w700,
-                                          color: Colors.white,
+                                          letterSpacing: -0.36,
+                                          color: _ProjectsPalette.onSurface,
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      data.version,
-                                      style: GoogleFonts.spaceMono(
-                                        fontSize: 10,
-                                        color: _ProjectsPalette.onSurfaceVariant
-                                            .withValues(alpha: 0.4),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: data.statusColor,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          data.statusLabel,
+                                          style: GoogleFonts.spaceMono(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            );
-
-                            if (stacked) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [info, const SizedBox(height: 24), meta],
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        data.version,
+                                        style: GoogleFonts.spaceMono(
+                                          fontSize: 10,
+                                          color: _ProjectsPalette.onSurfaceVariant
+                                              .withValues(alpha: 0.4),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               );
-                            }
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(child: info),
-                                const SizedBox(width: 24),
-                                Flexible(child: meta),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                      AnimatedOpacity(
-                        opacity: _hovered ? 1 : 0.6,
-                        duration: const Duration(milliseconds: 200),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.03),
-                            border: Border(
-                              top: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
-                            ),
+
+                              if (stacked) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [info, const SizedBox(height: 24), meta],
+                                );
+                              }
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: info),
+                                  const SizedBox(width: 24),
+                                  Flexible(child: meta),
+                                ],
+                              );
+                            },
                           ),
-                          child: Row(
-                            children: [
-                              Text(
-                                data.actionLabel,
-                                style: GoogleFonts.spaceMono(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 1,
+                        ),
+                        AnimatedOpacity(
+                          opacity: _hovered ? 1 : 0.6,
+                          duration: const Duration(milliseconds: 200),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.03),
+                              border: Border(
+                                top: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  data.actionLabel,
+                                  style: GoogleFonts.spaceMono(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1,
+                                    color: data.actionPrimary
+                                        ? _ProjectsPalette.primary
+                                        : _ProjectsPalette.onSurface,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Icon(
+                                  data.actionIcon,
+                                  size: 18,
                                   color: data.actionPrimary
                                       ? _ProjectsPalette.primary
                                       : _ProjectsPalette.onSurface,
                                 ),
-                              ),
-                              const Spacer(),
-                              Icon(
-                                data.actionIcon,
-                                size: 18,
-                                color: data.actionPrimary
-                                    ? _ProjectsPalette.primary
-                                    : _ProjectsPalette.onSurface,
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

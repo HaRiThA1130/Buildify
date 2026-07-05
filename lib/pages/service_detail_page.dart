@@ -164,7 +164,10 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
   }
 
   void _manualDeploy() {
-    if (ref.read(aiServerProvider).status != ServerStatus.running) {
+    final status = ref.read(aiServerProvider).status;
+    if (status == ServerStatus.running) {
+      ref.read(aiServerProvider.notifier).stopServer();
+    } else if (status == ServerStatus.stopped) {
       unawaited(ref.read(aiServerProvider.notifier).startServer());
     }
   }
@@ -217,7 +220,11 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                           48,
                         ),
                         children: [
-                      _DetailIntro(onManualDeploy: _manualDeploy),
+                      _DetailIntro(
+                        modelName: model.name,
+                        status: state.status,
+                        onManualDeploy: _manualDeploy,
+                      ),
                       const SizedBox(height: 32),
                       _MetadataGrid(
                         serviceId: _serviceId,
@@ -323,7 +330,11 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                         storagePct: storagePct,
                       ),
                       const SizedBox(height: 48),
-                      _LatestDeploymentSection(modelName: model.name),
+                      _ActiveRuntimeSection(
+                        modelName: model.name,
+                        status: state.status,
+                        port: state.port,
+                      ),
                       const SizedBox(height: 48),
                       _RuntimeLogsSection(
                         logs: logs,
@@ -510,8 +521,14 @@ class _DetailTopBar extends StatelessWidget {
 }
 
 class _DetailIntro extends StatelessWidget {
-  const _DetailIntro({required this.onManualDeploy});
+  const _DetailIntro({
+    required this.modelName,
+    required this.status,
+    required this.onManualDeploy,
+  });
 
+  final String modelName;
+  final ServerStatus status;
   final VoidCallback onManualDeploy;
 
   @override
@@ -519,24 +536,32 @@ class _DetailIntro extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Breadcrumbs(),
+        _Breadcrumbs(modelName: modelName),
         const SizedBox(height: 16),
-        _ServiceHeader(modelName: 'Project---X', onManualDeploy: onManualDeploy),
+        _ServiceHeader(
+          modelName: modelName,
+          status: status,
+          onManualDeploy: onManualDeploy,
+        ),
       ],
     );
   }
 }
 
 class _Breadcrumbs extends StatelessWidget {
+  const _Breadcrumbs({required this.modelName});
+
+  final String modelName;
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Icon(Icons.folder_open_outlined, size: 14, color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.6)),
         Icon(Icons.chevron_right, size: 12, color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.6)),
-        Text('project---x', style: _crumbStyle()),
+        Text(modelName.toLowerCase(), style: _crumbStyle()),
         Icon(Icons.chevron_right, size: 12, color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.6)),
-        Text('production', style: _crumbStyle(active: true)),
+        Text('local-server', style: _crumbStyle(active: true)),
       ],
     );
   }
@@ -556,14 +581,19 @@ class _Breadcrumbs extends StatelessWidget {
 class _ServiceHeader extends StatelessWidget {
   const _ServiceHeader({
     required this.modelName,
+    required this.status,
     required this.onManualDeploy,
   });
 
   final String modelName;
+  final ServerStatus status;
   final VoidCallback onManualDeploy;
 
   @override
   Widget build(BuildContext context) {
+    final isRunning = status == ServerStatus.running;
+    final isStarting = status == ServerStatus.starting;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final stacked = constraints.maxWidth < 640;
@@ -575,7 +605,7 @@ class _ServiceHeader extends StatelessWidget {
                 const Icon(Icons.language, size: 16, color: _DetailPalette.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'web service',
+                  'ai inference service',
                   style: GoogleFonts.spaceMono(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
@@ -596,20 +626,23 @@ class _ServiceHeader extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            Wrap(
+            const Wrap(
               spacing: 8,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _TagChip('docker'),
+                _TagChip('llama.cpp'),
+                _TagChip('on-device edge'),
               ],
             ),
           ],
         );
         final actions = _PrimaryButton(
-          label: 'manual deploy',
-          icon: Icons.bolt,
-          onTap: onManualDeploy,
+          label: isRunning ? 'STOP AI SERVER' : (isStarting ? 'STARTING...' : 'START AI SERVER'),
+          icon: isRunning ? Icons.stop : Icons.play_arrow,
+          onTap: isStarting ? null : onManualDeploy,
+          backgroundColor: isRunning ? _DetailPalette.statusSuspended : _DetailPalette.primary,
+          foregroundColor: isRunning ? Colors.white : _DetailPalette.onPrimary,
         );
         if (stacked) {
           return Column(
@@ -708,17 +741,25 @@ class _PrimaryButton extends StatelessWidget {
   const _PrimaryButton({
     required this.label,
     required this.icon,
-    required this.onTap,
+    this.onTap,
+    this.backgroundColor,
+    this.foregroundColor,
   });
 
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
 
   @override
   Widget build(BuildContext context) {
+    final bg = backgroundColor ?? _DetailPalette.primary;
+    final fg = foregroundColor ?? _DetailPalette.onPrimary;
+    final disabled = onTap == null;
+
     return Material(
-      color: _DetailPalette.primary,
+      color: disabled ? bg.withValues(alpha: 0.5) : bg,
       child: InkWell(
         onTap: onTap,
         child: Padding(
@@ -732,11 +773,11 @@ class _PrimaryButton extends StatelessWidget {
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1,
-                  color: _DetailPalette.onPrimary,
+                  color: fg,
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(icon, size: 16, color: _DetailPalette.onPrimary),
+              Icon(icon, size: 16, color: fg),
             ],
           ),
         ),
@@ -1678,17 +1719,30 @@ class _ProgressMetric extends StatelessWidget {
   }
 }
 
-class _LatestDeploymentSection extends StatelessWidget {
-  const _LatestDeploymentSection({required this.modelName});
+class _ActiveRuntimeSection extends StatelessWidget {
+  const _ActiveRuntimeSection({
+    required this.modelName,
+    required this.status,
+    required this.port,
+  });
 
   final String modelName;
+  final ServerStatus status;
+  final int port;
 
   @override
   Widget build(BuildContext context) {
+    final isRunning = status == ServerStatus.running;
+    final isStarting = status == ServerStatus.starting;
+    final isStopping = status == ServerStatus.stopping;
+
+    final statusLabel = isRunning ? 'online' : (isStarting ? 'starting' : (isStopping ? 'stopping' : 'offline'));
+    final statusColor = isRunning ? _DetailPalette.successGreen : (isStarting ? Colors.amber : (isStopping ? _DetailPalette.statusSuspended : _DetailPalette.onSurfaceVariant));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel('latest deployment'),
+        const _SectionLabel('active runtime status'),
         const SizedBox(height: 16),
         Container(
           decoration: BoxDecoration(
@@ -1709,12 +1763,12 @@ class _LatestDeploymentSection extends StatelessWidget {
                     Container(
                       width: 8,
                       height: 8,
-                      color: _DetailPalette.successGreen,
+                      color: statusColor,
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
-                        'may 10, 2026 at 11:55 pm',
+                        statusLabel.toUpperCase(),
                         style: GoogleFonts.spaceMono(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -1724,13 +1778,13 @@ class _LatestDeploymentSection extends StatelessWidget {
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      color: _DetailPalette.successGreen,
+                      color: statusColor.withValues(alpha: 0.2),
                       child: Text(
-                        'live',
+                        isRunning ? 'LIVE' : 'STOPPED',
                         style: GoogleFonts.spaceMono(
                           fontSize: 8,
                           fontWeight: FontWeight.w700,
-                          color: _DetailPalette.primary,
+                          color: statusColor,
                         ),
                       ),
                     ),
@@ -1748,7 +1802,7 @@ class _LatestDeploymentSection extends StatelessWidget {
                         border: Border.all(color: _DetailPalette.outlineVariant),
                       ),
                       child: Text(
-                        '7335ca6',
+                        'PORT $port',
                         style: GoogleFonts.spaceMono(
                           fontSize: 8,
                           color: _DetailPalette.onSurfaceVariant,
@@ -1758,7 +1812,7 @@ class _LatestDeploymentSection extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
-                        'deploy ${modelName.toLowerCase()} — edge inference',
+                        'model: ${modelName.toLowerCase()} — edge inference engine',
                         style: GoogleFonts.spaceMono(
                           fontSize: 14,
                           color: _DetailPalette.onSurface,
