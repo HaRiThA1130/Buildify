@@ -31,30 +31,7 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
   static const _liveUrl = 'project-x-h5d0.onrender.com';
   static const _repo = 'Sujith8257 / Project---X';
 
-  static final _demoLogs = <_LogLine>[
-    _LogLine('11:38:46 pm', '[fwp89]', 'initializing container environment...'),
-    _LogLine('11:38:46 pm', '[fwp89]', '> paperstudio-backend@1.0.0 start', highlight: true),
-    _LogLine('11:38:46 pm', '[fwp89]', '> node dist/server.js', highlight: true),
-    _LogLine(
-      '11:38:51 pm',
-      '[fwp89]',
-      'supabase client initialized',
-      success: true,
-    ),
-    _LogLine(
-      '11:38:52 pm',
-      '[fwp89]',
-      'skipping database setup because database_url is not configured.',
-      warning: true,
-    ),
-    _LogLine(
-      '11:38:52 pm',
-      '[fwp89]',
-      '🚀 project-x paper search backend running on port 3000',
-    ),
-    _LogLine('11:39:10 pm', '[fwp89]', 'get /health 200 - 12ms', dim: true),
-    _LogLine('11:40:02 pm', '[fwp89]', 'post /api/v1/search 200 - 145ms', dim: true),
-  ];
+
 
   @override
   void initState() {
@@ -132,8 +109,9 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
       );
     });
     final dlLines = _downloadLogLines(state, _model(state));
-    return [..._demoLogs, ...fromState, ...dlLines];
+    return [...fromState, ...dlLines];
   }
+
 
   List<_LogLine> _filteredLogs(List<_LogLine> logs) {
     final q = _logSearchController.text.trim().toLowerCase();
@@ -354,8 +332,12 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                             if (!_showCustomRange) _timeRange = 'last hour';
                           });
                         },
-                        onApplyCustomRange: () =>
-                            setState(() => _showCustomRange = false),
+                        onApplyCustomRange: () {
+                          setState(() {
+                            _showCustomRange = false;
+                            _timeRange = 'custom range';
+                          });
+                        },
                         onCancelCustomRange: () =>
                             setState(() => _showCustomRange = false),
                       ),
@@ -2022,7 +2004,7 @@ class _RuntimeLogsSection extends StatelessWidget {
                           padding: const EdgeInsets.all(24),
                         children: [
                           Text(
-                            'may 26',
+                            _todayHeader(),
                             style: GoogleFonts.spaceMono(
                               fontSize: 14,
                               color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.4),
@@ -2074,6 +2056,13 @@ class _CustomRangePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final oneHourAgo = now.subtract(const Duration(hours: 1));
+    final offsetStr = now.timeZoneOffset.isNegative ? '-' : '+';
+    final offsetHours = now.timeZoneOffset.inHours.abs().toString().padLeft(2, '0');
+    final offsetMinutes = (now.timeZoneOffset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    final tzLabel = 'GMT$offsetStr$offsetHours:$offsetMinutes';
+
     return Container(
       padding: const EdgeInsets.all(24),
       color: _DetailPalette.surfaceContainer,
@@ -2095,9 +2084,17 @@ class _CustomRangePicker extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          _RangeField(label: 'START (GMT+5:30)', date: 'May 26 2026', time: '19:48:02'),
+          _RangeField(
+            label: 'START ($tzLabel)',
+            date: '${_monthName(oneHourAgo)} ${oneHourAgo.day} ${oneHourAgo.year}',
+            time: '${oneHourAgo.hour.toString().padLeft(2, '0')}:${oneHourAgo.minute.toString().padLeft(2, '0')}:${oneHourAgo.second.toString().padLeft(2, '0')}',
+          ),
           const SizedBox(height: 16),
-          _RangeField(label: 'END (GMT+5:30)', date: 'May 26 2026', time: '23:48:02'),
+          _RangeField(
+            label: 'END ($tzLabel)',
+            date: '${_monthName(now)} ${now.day} ${now.year}',
+            time: '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}',
+          ),
           const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -2110,6 +2107,11 @@ class _CustomRangePicker extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _monthName(DateTime dt) {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[dt.month - 1];
   }
 }
 
@@ -2340,4 +2342,13 @@ class _PulseStatusIndicatorState extends State<_PulseStatusIndicator>
       },
     );
   }
+}
+
+String _todayHeader() {
+  final now = DateTime.now();
+  final months = [
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'
+  ];
+  return '${months[now.month - 1]} ${now.day}, ${now.year}';
 }
