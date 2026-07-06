@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/ai_server_models.dart';
 import '../services/native_server_bridge.dart';
+import '../backend/embedded_backend.dart';
 
 const _catalogRemoteUrl =
     'https://raw.githubusercontent.com/Sujith8257/Buildify/main/assets/models/catalog.json';
@@ -17,6 +18,17 @@ const _catalogRemoteUrl =
 final aiServerProvider =
     StateNotifierProvider<AiServerController, AiServerState>((ref) {
   return AiServerController();
+});
+
+final embeddedBackendProvider = Provider<EmbeddedBackendService>((ref) {
+  final service = EmbeddedBackendService();
+  ref.onDispose(() => service.dispose());
+  return service;
+});
+
+final backendProjectsProvider = StreamProvider<List<BackendProject>>((ref) {
+  final service = ref.watch(embeddedBackendProvider);
+  return service.stream.map((state) => state.projects).distinct();
 });
 
 class AiServerController extends StateNotifier<AiServerState> {
@@ -86,9 +98,16 @@ class AiServerController extends StateNotifier<AiServerState> {
         progress: 0,
       );
     }
+    final savedModelId = await _secure.read(key: _kSecSelectedModelId);
+    final initialModelId = (savedModelId != null &&
+            savedModelId.isNotEmpty &&
+            catalog.any((m) => m.id == savedModelId))
+        ? savedModelId
+        : (catalog.isEmpty ? '' : catalog.first.id);
+
     state = state.copyWith(
       models: catalog,
-      selectedModelId: catalog.isEmpty ? '' : catalog.first.id,
+      selectedModelId: initialModelId,
       downloads: downloads,
     );
     _appendLog('loaded ${catalog.length} model(s) from catalog', LogType.system);
@@ -125,10 +144,15 @@ class AiServerController extends StateNotifier<AiServerState> {
           );
         }
       }
-      final selectedId = state.selectedModelId.isNotEmpty &&
-              catalog.any((m) => m.id == state.selectedModelId)
-          ? state.selectedModelId
-          : catalog.first.id;
+      final savedModelId = await _secure.read(key: _kSecSelectedModelId);
+      final selectedId = (savedModelId != null &&
+              savedModelId.isNotEmpty &&
+              catalog.any((m) => m.id == savedModelId))
+          ? savedModelId
+          : (state.selectedModelId.isNotEmpty &&
+                  catalog.any((m) => m.id == state.selectedModelId)
+              ? state.selectedModelId
+              : catalog.first.id);
       state = state.copyWith(
         models: catalog,
         selectedModelId: selectedId,
@@ -157,6 +181,7 @@ class AiServerController extends StateNotifier<AiServerState> {
   static const _kSecIdleMinutes = 'sec_idle_minutes';
   static const _kSecBatteryPct = 'sec_battery_pct';
   static const _kSecThermal = 'sec_thermal_stop';
+  static const _kSecSelectedModelId = 'sec_selected_model_id';
 
   ModelProfile get selectedModel =>
       state.models.firstWhere((model) => model.id == state.selectedModelId);
@@ -343,6 +368,7 @@ class AiServerController extends StateNotifier<AiServerState> {
       return;
     }
     state = state.copyWith(selectedModelId: modelId);
+    unawaited(_secure.write(key: _kSecSelectedModelId, value: modelId));
     _appendLog('selected model: ${selectedModel.name}', LogType.system);
   }
 

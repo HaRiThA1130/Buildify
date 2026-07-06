@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/ai_server_models.dart';
 import '../providers/ai_server_provider.dart';
+import '../screens/model_store_screen.dart';
+import '../screens/self_test_screen.dart';
 
 /// Project service detail — matches the Project---X HTML screen.
 class ServiceDetailPage extends ConsumerStatefulWidget {
@@ -29,30 +31,7 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
   static const _liveUrl = 'project-x-h5d0.onrender.com';
   static const _repo = 'Sujith8257 / Project---X';
 
-  static final _demoLogs = <_LogLine>[
-    _LogLine('11:38:46 pm', '[fwp89]', 'initializing container environment...'),
-    _LogLine('11:38:46 pm', '[fwp89]', '> paperstudio-backend@1.0.0 start', highlight: true),
-    _LogLine('11:38:46 pm', '[fwp89]', '> node dist/server.js', highlight: true),
-    _LogLine(
-      '11:38:51 pm',
-      '[fwp89]',
-      'supabase client initialized',
-      success: true,
-    ),
-    _LogLine(
-      '11:38:52 pm',
-      '[fwp89]',
-      'skipping database setup because database_url is not configured.',
-      warning: true,
-    ),
-    _LogLine(
-      '11:38:52 pm',
-      '[fwp89]',
-      '🚀 project-x paper search backend running on port 3000',
-    ),
-    _LogLine('11:39:10 pm', '[fwp89]', 'get /health 200 - 12ms', dim: true),
-    _LogLine('11:40:02 pm', '[fwp89]', 'post /api/v1/search 200 - 145ms', dim: true),
-  ];
+
 
   @override
   void initState() {
@@ -130,8 +109,9 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
       );
     });
     final dlLines = _downloadLogLines(state, _model(state));
-    return [..._demoLogs, ...fromState, ...dlLines];
+    return [...fromState, ...dlLines];
   }
+
 
   List<_LogLine> _filteredLogs(List<_LogLine> logs) {
     final q = _logSearchController.text.trim().toLowerCase();
@@ -162,7 +142,10 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
   }
 
   void _manualDeploy() {
-    if (ref.read(aiServerProvider).status != ServerStatus.running) {
+    final status = ref.read(aiServerProvider).status;
+    if (status == ServerStatus.running) {
+      ref.read(aiServerProvider.notifier).stopServer();
+    } else if (status == ServerStatus.stopped) {
       unawaited(ref.read(aiServerProvider.notifier).startServer());
     }
   }
@@ -215,7 +198,11 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                           48,
                         ),
                         children: [
-                      _DetailIntro(onManualDeploy: _manualDeploy),
+                      _DetailIntro(
+                        modelName: model.name,
+                        status: state.status,
+                        onManualDeploy: _manualDeploy,
+                      ),
                       const SizedBox(height: 32),
                       _MetadataGrid(
                         serviceId: _serviceId,
@@ -244,6 +231,68 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                         },
                       ),
                       const SizedBox(height: 48),
+                      _HealthThresholdsSection(
+                        idleTimeoutMinutes: state.security.idleTimeoutMinutes,
+                        batteryStopPercent: state.security.batteryStopPercent,
+                        thermalStop: state.security.thermalStop,
+                        onIdleChanged: (v) => ref.read(aiServerProvider.notifier).setIdleTimeoutMinutes(v.round()),
+                        onBatteryChanged: (v) => ref.read(aiServerProvider.notifier).setBatteryStopPercent(v.round()),
+                        onThermalChanged: (v) => ref.read(aiServerProvider.notifier).setThermalStop(v),
+                      ),
+                      const SizedBox(height: 48),
+                      _RuntimeControlsSection(
+                        lowPowerMode: state.lowPowerMode,
+                        tokenLimit: state.tokenLimit,
+                        temperature: state.temperature,
+                        onLowPowerChanged: (v) => ref.read(aiServerProvider.notifier).setLowPowerMode(v),
+                        onTokenLimitChanged: (v) => ref.read(aiServerProvider.notifier).setTokenLimit(v),
+                        onTemperatureChanged: (v) => ref.read(aiServerProvider.notifier).setTemperature(v),
+                      ),
+                      const SizedBox(height: 48),
+                      _NetworkEndpointsSection(
+                        port: state.port,
+                        tailscaleIp: state.device.tailscaleIp,
+                        tunnel: state.tunnel,
+                        isRunning: state.status == ServerStatus.running,
+                        onStartTunnel: () async {
+                          final ok = await ref.read(aiServerProvider.notifier).startTunnel();
+                          if (!ok && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Start the AI server before enabling Cloudflare tunnel'),
+                              ),
+                            );
+                          }
+                        },
+                        onStopTunnel: () {
+                          ref.read(aiServerProvider.notifier).stopTunnel();
+                        },
+                        onCopyApiUrl: () {
+                          Clipboard.setData(ClipboardData(text: 'http://127.0.0.1:${state.port}/v1'));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Local API URL copied to clipboard')),
+                          );
+                        },
+                        onCopyTailscaleUrl: () {
+                          final ip = state.device.tailscaleIp;
+                          if (ip != null) {
+                            Clipboard.setData(ClipboardData(text: 'http://$ip:${state.port}'));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Tailscale URL copied to clipboard')),
+                            );
+                          }
+                        },
+                        onCopyTunnelUrl: () {
+                          final url = state.tunnel.publicUrl;
+                          if (url != null) {
+                            Clipboard.setData(ClipboardData(text: url));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Cloudflare Tunnel URL copied to clipboard')),
+                            );
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 48),
                       _SystemStatusSection(
                         deviceLabel: device.cpuLabel.isNotEmpty
                             ? device.cpuLabel
@@ -259,7 +308,11 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                         storagePct: storagePct,
                       ),
                       const SizedBox(height: 48),
-                      _LatestDeploymentSection(modelName: model.name),
+                      _ActiveRuntimeSection(
+                        modelName: model.name,
+                        status: state.status,
+                        port: state.port,
+                      ),
                       const SizedBox(height: 48),
                       _RuntimeLogsSection(
                         logs: logs,
@@ -279,8 +332,12 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                             if (!_showCustomRange) _timeRange = 'last hour';
                           });
                         },
-                        onApplyCustomRange: () =>
-                            setState(() => _showCustomRange = false),
+                        onApplyCustomRange: () {
+                          setState(() {
+                            _showCustomRange = false;
+                            _timeRange = 'custom range';
+                          });
+                        },
                         onCancelCustomRange: () =>
                             setState(() => _showCustomRange = false),
                       ),
@@ -309,7 +366,7 @@ class _DetailPalette {
   static const surfaceContainer = Color(0xFF20201E);
   static const surfaceContainerLow = Color(0xFF1C1C1A);
   static const surfaceContainerLowest = Color(0xFF0E0E0D);
-  static const successGreen = Color(0xFF003924);
+  static const successGreen = Color(0xFF10B981);
   static const statusSuspended = Color(0xFF897671);
   static const terminalBg = Color(0xFF0E0E0D);
 }
@@ -426,8 +483,18 @@ class _DetailTopBar extends StatelessWidget {
           ),
           const Spacer(),
           IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.person_outline, color: _DetailPalette.onSurface),
+            tooltip: 'Model Store',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ModelStoreScreen()),
+            ),
+            icon: const Icon(Icons.storefront_outlined, color: _DetailPalette.onSurface),
+          ),
+          IconButton(
+            tooltip: 'Self-Test Diagnostics',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SelfTestScreen()),
+            ),
+            icon: const Icon(Icons.biotech_outlined, color: _DetailPalette.onSurface),
           ),
         ],
       ),
@@ -436,8 +503,14 @@ class _DetailTopBar extends StatelessWidget {
 }
 
 class _DetailIntro extends StatelessWidget {
-  const _DetailIntro({required this.onManualDeploy});
+  const _DetailIntro({
+    required this.modelName,
+    required this.status,
+    required this.onManualDeploy,
+  });
 
+  final String modelName;
+  final ServerStatus status;
   final VoidCallback onManualDeploy;
 
   @override
@@ -445,24 +518,32 @@ class _DetailIntro extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Breadcrumbs(),
+        _Breadcrumbs(modelName: modelName),
         const SizedBox(height: 16),
-        _ServiceHeader(modelName: 'Project---X', onManualDeploy: onManualDeploy),
+        _ServiceHeader(
+          modelName: modelName,
+          status: status,
+          onManualDeploy: onManualDeploy,
+        ),
       ],
     );
   }
 }
 
 class _Breadcrumbs extends StatelessWidget {
+  const _Breadcrumbs({required this.modelName});
+
+  final String modelName;
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Icon(Icons.folder_open_outlined, size: 14, color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.6)),
         Icon(Icons.chevron_right, size: 12, color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.6)),
-        Text('project---x', style: _crumbStyle()),
+        Text(modelName.toLowerCase(), style: _crumbStyle()),
         Icon(Icons.chevron_right, size: 12, color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.6)),
-        Text('production', style: _crumbStyle(active: true)),
+        Text('local-server', style: _crumbStyle(active: true)),
       ],
     );
   }
@@ -482,14 +563,19 @@ class _Breadcrumbs extends StatelessWidget {
 class _ServiceHeader extends StatelessWidget {
   const _ServiceHeader({
     required this.modelName,
+    required this.status,
     required this.onManualDeploy,
   });
 
   final String modelName;
+  final ServerStatus status;
   final VoidCallback onManualDeploy;
 
   @override
   Widget build(BuildContext context) {
+    final isRunning = status == ServerStatus.running;
+    final isStarting = status == ServerStatus.starting;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final stacked = constraints.maxWidth < 640;
@@ -501,7 +587,7 @@ class _ServiceHeader extends StatelessWidget {
                 const Icon(Icons.language, size: 16, color: _DetailPalette.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'web service',
+                  'ai inference service',
                   style: GoogleFonts.spaceMono(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
@@ -522,20 +608,23 @@ class _ServiceHeader extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            Wrap(
+            const Wrap(
               spacing: 8,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _TagChip('docker'),
+                _TagChip('llama.cpp'),
+                _TagChip('on-device edge'),
               ],
             ),
           ],
         );
         final actions = _PrimaryButton(
-          label: 'manual deploy',
-          icon: Icons.bolt,
-          onTap: onManualDeploy,
+          label: isRunning ? 'STOP AI SERVER' : (isStarting ? 'STARTING...' : 'START AI SERVER'),
+          icon: isRunning ? Icons.stop : Icons.play_arrow,
+          onTap: isStarting ? null : onManualDeploy,
+          backgroundColor: isRunning ? _DetailPalette.statusSuspended : _DetailPalette.primary,
+          foregroundColor: isRunning ? Colors.white : _DetailPalette.onPrimary,
         );
         if (stacked) {
           return Column(
@@ -634,17 +723,25 @@ class _PrimaryButton extends StatelessWidget {
   const _PrimaryButton({
     required this.label,
     required this.icon,
-    required this.onTap,
+    this.onTap,
+    this.backgroundColor,
+    this.foregroundColor,
   });
 
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
 
   @override
   Widget build(BuildContext context) {
+    final bg = backgroundColor ?? _DetailPalette.primary;
+    final fg = foregroundColor ?? _DetailPalette.onPrimary;
+    final disabled = onTap == null;
+
     return Material(
-      color: _DetailPalette.primary,
+      color: disabled ? bg.withValues(alpha: 0.5) : bg,
       child: InkWell(
         onTap: onTap,
         child: Padding(
@@ -658,11 +755,11 @@ class _PrimaryButton extends StatelessWidget {
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1,
-                  color: _DetailPalette.onPrimary,
+                  color: fg,
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(icon, size: 16, color: _DetailPalette.onPrimary),
+              Icon(icon, size: 16, color: fg),
             ],
           ),
         ),
@@ -870,11 +967,14 @@ class _SecuritySection extends StatelessWidget {
                       color: _DetailPalette.onSurfaceVariant,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      'bearer token authentication',
-                      style: GoogleFonts.spaceMono(
-                        fontSize: 14,
-                        color: _DetailPalette.onSurface,
+                    Expanded(
+                      child: Text(
+                        'bearer token authentication',
+                        style: GoogleFonts.spaceMono(
+                          fontSize: 14,
+                          color: _DetailPalette.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const Spacer(),
@@ -951,6 +1051,514 @@ class _SecuritySection extends StatelessWidget {
                     ],
                   ),
                 ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailSliderRow extends StatelessWidget {
+  const _DetailSliderRow({
+    required this.label,
+    required this.valueLabel,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String valueLabel;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.spaceMono(fontSize: 12, color: _DetailPalette.onSurface),
+            ),
+            const Spacer(),
+            Text(
+              valueLabel,
+              style: GoogleFonts.spaceMono(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: _DetailPalette.primary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: _DetailPalette.primary,
+            inactiveTrackColor: _DetailPalette.outlineVariant,
+            thumbColor: _DetailPalette.primary,
+            overlayColor: _DetailPalette.primary.withValues(alpha: 0.1),
+            trackHeight: 2,
+          ),
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HealthThresholdsSection extends StatelessWidget {
+  const _HealthThresholdsSection({
+    required this.idleTimeoutMinutes,
+    required this.batteryStopPercent,
+    required this.thermalStop,
+    required this.onIdleChanged,
+    required this.onBatteryChanged,
+    required this.onThermalChanged,
+  });
+
+  final int idleTimeoutMinutes;
+  final int batteryStopPercent;
+  final bool thermalStop;
+  final ValueChanged<double> onIdleChanged;
+  final ValueChanged<double> onBatteryChanged;
+  final ValueChanged<bool> onThermalChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('health checks & auto-stop'),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: _DetailPalette.background,
+            border: Border.all(color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _DetailPalette.surfaceContainerLow.withValues(alpha: 0.5),
+                  border: const Border(bottom: BorderSide(color: _DetailPalette.outlineVariant)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.thermostat_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'stop on thermal warning',
+                        style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      thermalStop ? 'ACTIVE' : 'OFF',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: thermalStop ? _DetailPalette.primary : _DetailPalette.statusSuspended,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Switch(
+                      value: thermalStop,
+                      onChanged: onThermalChanged,
+                      activeThumbColor: _DetailPalette.primary,
+                      activeTrackColor: _DetailPalette.outlineVariant,
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _DetailSliderRow(
+                      label: 'idle timeout',
+                      valueLabel: idleTimeoutMinutes == 0 ? 'Off' : '$idleTimeoutMinutes min',
+                      value: idleTimeoutMinutes.toDouble(),
+                      min: 0,
+                      max: 60,
+                      divisions: 12,
+                      onChanged: onIdleChanged,
+                    ),
+                    const SizedBox(height: 16),
+                    _DetailSliderRow(
+                      label: 'stop below battery',
+                      valueLabel: batteryStopPercent == 0 ? 'Off' : '$batteryStopPercent%',
+                      value: batteryStopPercent.toDouble(),
+                      min: 0,
+                      max: 50,
+                      divisions: 10,
+                      onChanged: onBatteryChanged,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RuntimeControlsSection extends StatelessWidget {
+  const _RuntimeControlsSection({
+    required this.lowPowerMode,
+    required this.tokenLimit,
+    required this.temperature,
+    required this.onLowPowerChanged,
+    required this.onTokenLimitChanged,
+    required this.onTemperatureChanged,
+  });
+
+  final bool lowPowerMode;
+  final int tokenLimit;
+  final double temperature;
+  final ValueChanged<bool> onLowPowerChanged;
+  final ValueChanged<double> onTokenLimitChanged;
+  final ValueChanged<double> onTemperatureChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('ai runtime controls & parameters'),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: _DetailPalette.background,
+            border: Border.all(color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _DetailPalette.surfaceContainerLow.withValues(alpha: 0.5),
+                  border: const Border(bottom: BorderSide(color: _DetailPalette.outlineVariant)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.battery_saver_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'low-power mode',
+                        style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      lowPowerMode ? 'ON' : 'OFF',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: lowPowerMode ? _DetailPalette.primary : _DetailPalette.statusSuspended,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Switch(
+                      value: lowPowerMode,
+                      onChanged: onLowPowerChanged,
+                      activeThumbColor: _DetailPalette.primary,
+                      activeTrackColor: _DetailPalette.outlineVariant,
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _DetailSliderRow(
+                      label: 'token limit (max tokens)',
+                      valueLabel: '$tokenLimit',
+                      value: tokenLimit.toDouble(),
+                      min: 32,
+                      max: 256,
+                      divisions: 7,
+                      onChanged: onTokenLimitChanged,
+                    ),
+                    const SizedBox(height: 16),
+                    _DetailSliderRow(
+                      label: 'temperature (creativity)',
+                      valueLabel: temperature.toStringAsFixed(1),
+                      value: temperature,
+                      min: 0.1,
+                      max: 1.2,
+                      divisions: 11,
+                      onChanged: onTemperatureChanged,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NetworkEndpointsSection extends StatelessWidget {
+  const _NetworkEndpointsSection({
+    required this.port,
+    required this.tailscaleIp,
+    required this.tunnel,
+    required this.isRunning,
+    required this.onStartTunnel,
+    required this.onStopTunnel,
+    required this.onCopyApiUrl,
+    required this.onCopyTailscaleUrl,
+    required this.onCopyTunnelUrl,
+  });
+
+  final int port;
+  final String? tailscaleIp;
+  final TunnelState tunnel;
+  final bool isRunning;
+  final VoidCallback onStartTunnel;
+  final VoidCallback onStopTunnel;
+  final VoidCallback onCopyApiUrl;
+  final VoidCallback onCopyTailscaleUrl;
+  final VoidCallback onCopyTunnelUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final tsIp = tailscaleIp;
+    final hasTs = tsIp != null && tsIp.isNotEmpty;
+    final pubUrl = tunnel.publicUrl;
+    final hasTunnel = pubUrl != null && pubUrl.isNotEmpty;
+    final isTunnelRunning = tunnel.status == TunnelStatus.running;
+    final isTunnelStarting = tunnel.status == TunnelStatus.starting;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('network, tunnels & endpoints'),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: _DetailPalette.background,
+            border: Border.all(color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _DetailPalette.surfaceContainerLow.withValues(alpha: 0.5),
+                  border: const Border(bottom: BorderSide(color: _DetailPalette.outlineVariant)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.router_outlined, size: 16, color: _DetailPalette.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'server status: ${isRunning ? 'online' : 'offline'}',
+                        style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'PORT $port',
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: _DetailPalette.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 1. Local API Endpoint
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'local api endpoint (same device)',
+                                style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'http://127.0.0.1:$port/v1',
+                                style: GoogleFonts.spaceMono(fontSize: 13, color: _DetailPalette.primary),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: onCopyApiUrl,
+                          icon: const Icon(Icons.content_copy, size: 16),
+                          color: _DetailPalette.onSurfaceVariant,
+                          tooltip: 'Copy Local API URL',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(height: 1, color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+                    const SizedBox(height: 16),
+                    // 2. Tailscale VPN Endpoint
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'tailscale vpn endpoint (private mesh lan)',
+                                      style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    hasTs ? Icons.check_circle : Icons.offline_bolt_outlined,
+                                    size: 12,
+                                    color: hasTs ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                hasTs ? 'http://$tsIp:$port' : 'tailscale not detected / offline',
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 13,
+                                  color: hasTs ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Access from your laptop/PC anywhere without exposing to public internet.',
+                                style: GoogleFonts.spaceMono(fontSize: 9, color: _DetailPalette.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: hasTs ? onCopyTailscaleUrl : null,
+                          icon: const Icon(Icons.content_copy, size: 16),
+                          color: _DetailPalette.onSurfaceVariant,
+                          tooltip: 'Copy Tailscale URL',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(height: 1, color: _DetailPalette.outlineVariant.withValues(alpha: 0.5)),
+                    const SizedBox(height: 16),
+                    // 3. Cloudflare Quick Tunnel
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'cloudflare quick tunnel (public https url)',
+                                      style: GoogleFonts.spaceMono(fontSize: 10, color: _DetailPalette.onSurfaceVariant),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    isTunnelRunning ? Icons.cloud_done : Icons.cloud_off_outlined,
+                                    size: 12,
+                                    color: isTunnelRunning ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                hasTunnel ? pubUrl : (isTunnelStarting ? 'starting tunnel...' : 'tunnel offline (no public url)'),
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 13,
+                                  color: hasTunnel ? _DetailPalette.primary : _DetailPalette.onSurfaceVariant,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Free public HTTPS URL via trycloudflare.com. Anyone on the internet can access.',
+                                style: GoogleFonts.spaceMono(fontSize: 9, color: _DetailPalette.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: hasTunnel ? onCopyTunnelUrl : null,
+                          icon: const Icon(Icons.content_copy, size: 16),
+                          color: _DetailPalette.onSurfaceVariant,
+                          tooltip: 'Copy Cloudflare Tunnel URL',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: isTunnelRunning ? _DetailPalette.statusSuspended : _DetailPalette.primary,
+                              foregroundColor: isTunnelRunning ? Colors.white : _DetailPalette.onPrimary,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: isTunnelStarting ? null : (isTunnelRunning ? onStopTunnel : onStartTunnel),
+                            icon: Icon(isTunnelRunning ? Icons.stop_circle_outlined : Icons.cloud_upload_outlined, size: 16),
+                            label: Text(
+                              isTunnelStarting ? 'STARTING TUNNEL...' : (isTunnelRunning ? 'STOP CLOUDFLARE TUNNEL' : 'START CLOUDFLARE TUNNEL'),
+                              style: GoogleFonts.spaceMono(fontSize: 11, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -1112,17 +1720,30 @@ class _ProgressMetric extends StatelessWidget {
   }
 }
 
-class _LatestDeploymentSection extends StatelessWidget {
-  const _LatestDeploymentSection({required this.modelName});
+class _ActiveRuntimeSection extends StatelessWidget {
+  const _ActiveRuntimeSection({
+    required this.modelName,
+    required this.status,
+    required this.port,
+  });
 
   final String modelName;
+  final ServerStatus status;
+  final int port;
 
   @override
   Widget build(BuildContext context) {
+    final isRunning = status == ServerStatus.running;
+    final isStarting = status == ServerStatus.starting;
+    final isStopping = status == ServerStatus.stopping;
+
+    final statusLabel = isRunning ? 'online' : (isStarting ? 'starting' : (isStopping ? 'stopping' : 'offline'));
+    final statusColor = isRunning ? _DetailPalette.successGreen : (isStarting ? Colors.amber : (isStopping ? _DetailPalette.statusSuspended : _DetailPalette.onSurfaceVariant));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel('latest deployment'),
+        const _SectionLabel('active runtime status'),
         const SizedBox(height: 16),
         Container(
           decoration: BoxDecoration(
@@ -1140,15 +1761,14 @@ class _LatestDeploymentSection extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      color: _DetailPalette.successGreen,
+                    _PulseStatusIndicator(
+                      color: statusColor,
+                      pulse: isRunning || isStarting,
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
-                        'may 10, 2026 at 11:55 pm',
+                        statusLabel.toUpperCase(),
                         style: GoogleFonts.spaceMono(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -1158,13 +1778,13 @@ class _LatestDeploymentSection extends StatelessWidget {
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      color: _DetailPalette.successGreen,
+                      color: statusColor.withValues(alpha: 0.2),
                       child: Text(
-                        'live',
+                        isRunning ? 'LIVE' : 'STOPPED',
                         style: GoogleFonts.spaceMono(
                           fontSize: 8,
                           fontWeight: FontWeight.w700,
-                          color: _DetailPalette.primary,
+                          color: statusColor,
                         ),
                       ),
                     ),
@@ -1182,7 +1802,7 @@ class _LatestDeploymentSection extends StatelessWidget {
                         border: Border.all(color: _DetailPalette.outlineVariant),
                       ),
                       child: Text(
-                        '7335ca6',
+                        'PORT $port',
                         style: GoogleFonts.spaceMono(
                           fontSize: 8,
                           color: _DetailPalette.onSurfaceVariant,
@@ -1192,7 +1812,7 @@ class _LatestDeploymentSection extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
-                        'deploy ${modelName.toLowerCase()} — edge inference',
+                        'model: ${modelName.toLowerCase()} — edge inference engine',
                         style: GoogleFonts.spaceMono(
                           fontSize: 14,
                           color: _DetailPalette.onSurface,
@@ -1249,7 +1869,18 @@ class _RuntimeLogsSection extends StatelessWidget {
         Row(
           children: [
             const Expanded(child: _SectionLabel('runtime logs')),
-            IconButton(onPressed: () {}, icon: const Icon(Icons.download_outlined, size: 20)),
+            IconButton(
+              tooltip: 'Copy logs',
+              onPressed: () {
+                if (logs.isEmpty) return;
+                final text = logs.map((l) => '${l.time} ${l.instance} ${l.message}').join('\n');
+                Clipboard.setData(ClipboardData(text: text));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Logs copied to clipboard')),
+                );
+              },
+              icon: const Icon(Icons.copy_outlined, size: 18),
+            ),
             IconButton(
               onPressed: onToggleFullscreen,
               icon: Icon(
@@ -1373,7 +2004,7 @@ class _RuntimeLogsSection extends StatelessWidget {
                           padding: const EdgeInsets.all(24),
                         children: [
                           Text(
-                            'may 26',
+                            _todayHeader(),
                             style: GoogleFonts.spaceMono(
                               fontSize: 14,
                               color: _DetailPalette.onSurfaceVariant.withValues(alpha: 0.4),
@@ -1425,6 +2056,13 @@ class _CustomRangePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final oneHourAgo = now.subtract(const Duration(hours: 1));
+    final offsetStr = now.timeZoneOffset.isNegative ? '-' : '+';
+    final offsetHours = now.timeZoneOffset.inHours.abs().toString().padLeft(2, '0');
+    final offsetMinutes = (now.timeZoneOffset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    final tzLabel = 'GMT$offsetStr$offsetHours:$offsetMinutes';
+
     return Container(
       padding: const EdgeInsets.all(24),
       color: _DetailPalette.surfaceContainer,
@@ -1446,9 +2084,17 @@ class _CustomRangePicker extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          _RangeField(label: 'START (GMT+5:30)', date: 'May 26 2026', time: '19:48:02'),
+          _RangeField(
+            label: 'START ($tzLabel)',
+            date: '${_monthName(oneHourAgo)} ${oneHourAgo.day} ${oneHourAgo.year}',
+            time: '${oneHourAgo.hour.toString().padLeft(2, '0')}:${oneHourAgo.minute.toString().padLeft(2, '0')}:${oneHourAgo.second.toString().padLeft(2, '0')}',
+          ),
           const SizedBox(height: 16),
-          _RangeField(label: 'END (GMT+5:30)', date: 'May 26 2026', time: '23:48:02'),
+          _RangeField(
+            label: 'END ($tzLabel)',
+            date: '${_monthName(now)} ${now.day} ${now.year}',
+            time: '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}',
+          ),
           const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -1461,6 +2107,11 @@ class _CustomRangePicker extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _monthName(DateTime dt) {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[dt.month - 1];
   }
 }
 
@@ -1598,4 +2249,106 @@ class _SectionLabel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PulseStatusIndicator extends StatefulWidget {
+  const _PulseStatusIndicator({required this.color, this.pulse = false});
+  final Color color;
+  final bool pulse;
+
+  @override
+  State<_PulseStatusIndicator> createState() => _PulseStatusIndicatorState();
+}
+
+class _PulseStatusIndicatorState extends State<_PulseStatusIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    if (widget.pulse) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PulseStatusIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pulse && !oldWidget.pulse) {
+      _controller.repeat();
+    } else if (!widget.pulse && oldWidget.pulse) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.pulse) {
+      return Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: widget.color,
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Transform.scale(
+              scale: 1.0 + _controller.value * 1.5,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.color.withValues(alpha: (1.0 - _controller.value) * 0.4),
+                ),
+              ),
+            ),
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color,
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.color.withValues(alpha: 0.4),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+String _todayHeader() {
+  final now = DateTime.now();
+  final months = [
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'
+  ];
+  return '${months[now.month - 1]} ${now.day}, ${now.year}';
 }
