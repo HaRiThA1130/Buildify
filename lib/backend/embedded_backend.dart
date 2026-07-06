@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
+import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import '../services/database_helper.dart';
 
 enum BackendLogType { request, error, system }
+enum HostingMode { persistent, ephemeral }
 
 class BackendLogEvent {
   const BackendLogEvent({
@@ -31,6 +36,8 @@ class BackendProject {
     required this.url,
     required this.lastDeployedAt,
     required this.isLive,
+    this.hostingMode = HostingMode.persistent,
+    this.localPath = '',
   });
 
   final String id;
@@ -39,6 +46,8 @@ class BackendProject {
   final String url;
   final DateTime? lastDeployedAt;
   final bool isLive;
+  final HostingMode hostingMode;
+  final String localPath;
 
   BackendProject copyWith({
     String? name,
@@ -46,6 +55,8 @@ class BackendProject {
     String? url,
     DateTime? lastDeployedAt,
     bool? isLive,
+    HostingMode? hostingMode,
+    String? localPath,
   }) {
     return BackendProject(
       id: id,
@@ -54,6 +65,8 @@ class BackendProject {
       url: url ?? this.url,
       lastDeployedAt: lastDeployedAt ?? this.lastDeployedAt,
       isLive: isLive ?? this.isLive,
+      hostingMode: hostingMode ?? this.hostingMode,
+      localPath: localPath ?? this.localPath,
     );
   }
 }
@@ -162,7 +175,9 @@ class EmbeddedBackendService {
         activeSession: null,
         logs: [],
         hostMappings: {},
-      );
+      ) {
+    unawaited(hydrateProjects());
+  }
 
   final _uuid = const Uuid();
   final _rand = Random();
@@ -175,6 +190,27 @@ class EmbeddedBackendService {
   BackendState get state => _state;
   Stream<BackendState> get stream => _stateController.stream;
 
+  Future<void> hydrateProjects() async {
+    try {
+      final dbProjects = await DatabaseHelper.instance.getProjects();
+      final loaded = dbProjects.map((row) {
+        return BackendProject(
+          id: row['id'] as String,
+          name: row['name'] as String,
+          repoProvider: row['type'] as String,
+          url: row['source_uri'] as String,
+          lastDeployedAt: DateTime.fromMillisecondsSinceEpoch(row['last_active_at'] as int),
+          isLive: row['desired_state'] == 'running',
+          hostingMode: row['hosting_mode'] == 'ephemeral'
+              ? HostingMode.ephemeral
+              : HostingMode.persistent,
+          localPath: row['local_path'] as String,
+        );
+      }).toList();
+      _emit(_state.copyWith(projects: loaded));
+    } catch (_) {}
+  }
+
   Future<void> devLogin({String userName = 'user'}) async {
     _emit(_state.copyWith(userName: userName));
   }
@@ -185,16 +221,59 @@ class EmbeddedBackendService {
     required String name,
     required String sourceType,
     String? customUrl,
+    HostingMode hostingMode = HostingMode.persistent,
+    String? customLocalPath,
   }) async {
     final slug = name.toLowerCase().replaceAll(' ', '-');
+    final id = _uuid.v4();
+
+    String localPath = customLocalPath ?? '';
+    if (localPath.isEmpty) {
+      if (hostingMode == HostingMode.persistent) {
+        final docDir = await getApplicationDocumentsDirectory();
+        localPath = join(docDir.path, 'projects', id);
+      } else {
+        final tempDir = await getTemporaryDirectory();
+        localPath = join(tempDir.path, 'ephemeral', id);
+      }
+    }
+    try {
+      final dir = Directory(localPath);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+    } catch (_) {}
+
     final p = BackendProject(
-      id: _uuid.v4(),
+      id: id,
       name: name,
       repoProvider: sourceType,
       url: customUrl ?? 'https://$slug.buildify.app',
-      lastDeployedAt: null,
+      lastDeployedAt: DateTime.now(),
       isLive: false,
+      hostingMode: hostingMode,
+      localPath: localPath,
     );
+
+    if (hostingMode == HostingMode.persistent) {
+      try {
+        await DatabaseHelper.instance.insertProject({
+          'id': p.id,
+          'name': p.name,
+          'type': p.repoProvider,
+          'hosting_mode': 'persistent',
+          'source_uri': p.url,
+          'local_path': p.localPath,
+          'port': 3000,
+          'subdomain': slug,
+          'env_vars': '{}',
+          'desired_state': 'stopped',
+          'created_at': DateTime.now().millisecondsSinceEpoch,
+          'last_active_at': DateTime.now().millisecondsSinceEpoch,
+        });
+      } catch (_) {}
+    }
+
     final host = Uri.tryParse(p.url)?.host;
     final hostMappings = Map<String, String>.from(_state.hostMappings);
     if (host != null && host.isNotEmpty) {
@@ -351,6 +430,32 @@ class EmbeddedBackendService {
     );
     _updateProject(current.projectId, (p) => p.copyWith(isLive: false));
     _emit(_state.copyWith(activeSession: null));
+
+    final proj = _state.projects.where((p) => p.id == current.projectId).firstOrNull;
+    if (proj != null && proj.hostingMode == HostingMode.ephemeral) {
+      await deleteProject(proj.id);
+    }
+  }
+
+  Future<void> deleteProject(String id) async {
+    final proj = _state.projects.where((p) => p.id == id).firstOrNull;
+    if (proj == null) return;
+
+    if (proj.hostingMode == HostingMode.persistent) {
+      try {
+        await DatabaseHelper.instance.deleteProject(id);
+      } catch (_) {}
+    } else {
+      try {
+        final dir = Directory(proj.localPath);
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      } catch (_) {}
+    }
+
+    final next = _state.projects.where((p) => p.id != id).toList();
+    _emit(_state.copyWith(projects: next));
   }
 
   Stream<BackendLogEvent> logsStream(String projectId) {
