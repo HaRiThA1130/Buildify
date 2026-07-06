@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/ai_server_models.dart';
@@ -29,6 +30,110 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
   final _searchController = TextEditingController();
   late final AnimationController _meshController;
 
+  String _aiProjectName = 'project---x';
+  final FlutterSecureStorage _secure = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
+  Future<void> _loadAiProjectName() async {
+    final name = await _secure.read(key: 'sec_ai_project_name');
+    if (name != null && name.isNotEmpty) {
+      setState(() {
+        _aiProjectName = name;
+      });
+    }
+  }
+
+  Future<void> _saveAiProjectName(String newName) async {
+    await _secure.write(key: 'sec_ai_project_name', value: newName);
+    setState(() {
+      _aiProjectName = newName;
+    });
+  }
+
+  void _showRenameDialog(String currentName, void Function(String) onRename) {
+    final controller = TextEditingController(text: currentName);
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 400),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: _ProjectsPalette.surfaceBody,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'rename project',
+                    style: GoogleFonts.spaceMono(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: _ProjectsPalette.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    style: GoogleFonts.spaceMono(color: Colors.white),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.05),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(
+                          'cancel',
+                          style: GoogleFonts.spaceMono(color: Colors.white70),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _ProjectsPalette.primary,
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: () {
+                          final text = controller.text.trim();
+                          if (text.isNotEmpty) {
+                            onRename(text);
+                          }
+                          Navigator.pop(ctx);
+                        },
+                        child: Text(
+                          'save',
+                          style: GoogleFonts.spaceMono(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   List<_ServiceData> getServices(
     AiServerState state,
     List<BackendProject> customProjects,
@@ -52,9 +157,8 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
               description: 'Llama 3 model',
             ),
     );
-
     final aiCard = _ServiceData(
-      name: 'project---x',
+      name: _aiProjectName,
       statusIcon: isRunning
           ? Icons.check_circle_outline
           : (isStarting ? Icons.sync : Icons.offline_bolt_outlined),
@@ -81,6 +185,11 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
             builder: (_) => const ServiceDetailPage(),
           ),
         );
+      },
+      onRename: () {
+        _showRenameDialog(_aiProjectName, (newName) {
+          _saveAiProjectName(newName);
+        });
       },
     );
 
@@ -119,9 +228,14 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
           await ref.read(embeddedBackendProvider).deleteProject(p.id);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Deleted \${p.name}')),
+              SnackBar(content: Text('Deleted ${p.name}')),
             );
           }
+        },
+        onRename: () {
+          _showRenameDialog(p.name, (newName) {
+            ref.read(embeddedBackendProvider).renameProject(p.id, newName);
+          });
         },
       );
     }).toList();
@@ -132,6 +246,7 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
   @override
   void initState() {
     super.initState();
+    _loadAiProjectName();
     _meshController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 20),
@@ -283,6 +398,7 @@ class _ServiceData {
     this.projectId,
     this.onTap,
     this.onDelete,
+    this.onRename,
   });
 
   final String name;
@@ -302,6 +418,7 @@ class _ServiceData {
   final String? projectId;
   final VoidCallback? onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onRename;
 }
 
 class _MeshBackground extends StatelessWidget {
@@ -632,6 +749,7 @@ class _ServiceCardState extends State<_ServiceCard> {
           );
         }
       },
+      onLongPress: data.onRename,
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() {

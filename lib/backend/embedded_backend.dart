@@ -458,6 +458,19 @@ class EmbeddedBackendService {
     _emit(_state.copyWith(projects: next));
   }
 
+  Future<void> renameProject(String id, String newName) async {
+    final proj = _state.projects.where((p) => p.id == id).firstOrNull;
+    if (proj == null) return;
+
+    if (proj.hostingMode == HostingMode.persistent) {
+      try {
+        await DatabaseHelper.instance.updateProject(id, {'name': newName});
+      } catch (_) {}
+    }
+
+    _updateProject(id, (p) => p.copyWith(name: newName));
+  }
+
   Stream<BackendLogEvent> logsStream(String projectId) {
     return _projectLogControllers
         .putIfAbsent(

@@ -29,7 +29,6 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
 
   static const _serviceId = 'srv-d7udp0po3t8c73fglb40';
   static const _liveUrl = 'project-x-h5d0.onrender.com';
-  static const _repo = 'Sujith8257 / Project---X';
 
 
 
@@ -206,7 +205,7 @@ class _ServiceDetailPageState extends ConsumerState<ServiceDetailPage> {
                       const SizedBox(height: 32),
                       _MetadataGrid(
                         serviceId: _serviceId,
-                        repo: _repo,
+                        repo: null,
                         liveUrl: liveUrl,
                         onCopyId: _copyServiceId,
                         onOpenUrl: () {
@@ -771,14 +770,14 @@ class _PrimaryButton extends StatelessWidget {
 class _MetadataGrid extends StatelessWidget {
   const _MetadataGrid({
     required this.serviceId,
-    required this.repo,
+    this.repo,
     required this.liveUrl,
     required this.onCopyId,
     required this.onOpenUrl,
   });
 
   final String serviceId;
-  final String repo;
+  final String? repo;
   final String liveUrl;
   final VoidCallback onCopyId;
   final VoidCallback onOpenUrl;
@@ -813,31 +812,32 @@ class _MetadataGrid extends StatelessWidget {
                 ],
               ),
             ),
-            _MetaCell(
-              label: 'repository',
-              child: Row(
-                children: [
-                  const Icon(Icons.code, size: 16, color: _DetailPalette.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      repo,
-                      style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+            if (repo != null)
+              _MetaCell(
+                label: 'repository',
+                child: Row(
+                  children: [
+                    const Icon(Icons.code, size: 16, color: _DetailPalette.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        repo!,
+                        style: GoogleFonts.spaceMono(fontSize: 14, color: _DetailPalette.onSurface),
+                      ),
                     ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: _DetailPalette.outlineVariant),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: _DetailPalette.outlineVariant),
+                      ),
+                      child: Text(
+                        'main',
+                        style: GoogleFonts.spaceMono(fontSize: 8, letterSpacing: 0.8),
+                      ),
                     ),
-                    child: Text(
-                      'main',
-                      style: GoogleFonts.spaceMono(fontSize: 8, letterSpacing: 0.8),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             _MetaCell(
               label: 'live url',
               child: Row(
@@ -873,16 +873,17 @@ class _MetadataGrid extends StatelessWidget {
               ],
             );
           }
+          final children = <Widget>[];
+          for (var i = 0; i < cells.length; i++) {
+            if (i > 0) {
+              children.add(VerticalDivider(width: 1, color: _DetailPalette.outlineVariant));
+            }
+            children.add(Expanded(child: cells[i]));
+          }
           return IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: cells[0]),
-                VerticalDivider(width: 1, color: _DetailPalette.outlineVariant),
-                Expanded(child: cells[1]),
-                VerticalDivider(width: 1, color: _DetailPalette.outlineVariant),
-                Expanded(child: cells[2]),
-              ],
+              children: children,
             ),
           );
         },
