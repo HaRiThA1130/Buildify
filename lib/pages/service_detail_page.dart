@@ -900,9 +900,10 @@ class _MetaCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             label,
@@ -993,7 +994,7 @@ class _SecuritySection extends StatelessWidget {
                     Switch(
                       value: requireApiKey,
                       onChanged: onToggleRequire,
-                      activeThumbColor: _DetailPalette.primary,
+                      activeColor: _DetailPalette.primary,
                       activeTrackColor: _DetailPalette.outlineVariant,
                     ),
                   ],
@@ -1184,7 +1185,7 @@ class _HealthThresholdsSection extends StatelessWidget {
                     Switch(
                       value: thermalStop,
                       onChanged: onThermalChanged,
-                      activeThumbColor: _DetailPalette.primary,
+                      activeColor: _DetailPalette.primary,
                       activeTrackColor: _DetailPalette.outlineVariant,
                     ),
                   ],
@@ -1286,7 +1287,7 @@ class _RuntimeControlsSection extends StatelessWidget {
                     Switch(
                       value: lowPowerMode,
                       onChanged: onLowPowerChanged,
-                      activeThumbColor: _DetailPalette.primary,
+                      activeColor: _DetailPalette.primary,
                       activeTrackColor: _DetailPalette.outlineVariant,
                     ),
                   ],
