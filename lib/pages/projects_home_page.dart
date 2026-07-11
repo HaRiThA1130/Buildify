@@ -8,6 +8,7 @@ import '../models/ai_server_models.dart';
 import '../providers/ai_server_provider.dart';
 import '../backend/embedded_backend.dart';
 import 'service_detail_page.dart';
+import 'host_project_wizard.dart';
 
 /// Projects dashboard — visual match for the buildify HTML mock.
 class ProjectsHomePage extends ConsumerStatefulWidget {
@@ -22,7 +23,7 @@ class ProjectsHomePage extends ConsumerStatefulWidget {
 
 class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
     with TickerProviderStateMixin {
-  static const _filters = ['all', 'services', 'env groups'];
+  static const _filters = ['all', 'services'];
 
   int _selectedFilter = 0;
   bool _productionExpanded = true;
@@ -147,9 +148,13 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
   }
 
   List<_ServiceData> _filteredServices(List<_ServiceData> services) {
+    List<_ServiceData> filtered = services;
+    if (_selectedFilter == 1) { // 'services' tab
+      filtered = services.where((s) => s.statusLabel == 'online').toList();
+    }
     final q = _searchController.text.trim().toLowerCase();
-    if (q.isEmpty) return services;
-    return services.where((s) => s.name.toLowerCase().contains(q)).toList();
+    if (q.isEmpty) return filtered;
+    return filtered.where((s) => s.name.toLowerCase().contains(q)).toList();
   }
 
   void _openNewServiceModal() {
@@ -159,17 +164,10 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
       builder: (ctx) => _NewServiceModal(
         onHostProject: () {
           Navigator.pop(ctx);
-          showDialog<void>(
-            context: context,
-            barrierColor: Colors.black.withValues(alpha: 0.6),
-            builder: (ctx2) => _CreateProjectModal(
-              onCreate: (name, runtime, mode) {
-                ref.read(embeddedBackendProvider).createProject(
-                  name: name,
-                  sourceType: runtime,
-                  hostingMode: mode,
-                );
-              },
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const HostProjectSourcePage(),
             ),
           );
         },
@@ -920,29 +918,33 @@ class _MetaCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: alt ? _ProjectsPalette.surfaceContainerHigh : _ProjectsPalette.surfaceMeta,
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.spaceMono(
-              fontSize: 8,
-              letterSpacing: 0.8,
-              color: _ProjectsPalette.outline.withValues(alpha: 0.6),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.spaceMono(
+                fontSize: 8,
+                letterSpacing: 0.8,
+                color: _ProjectsPalette.outline.withValues(alpha: 0.6),
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.spaceMono(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: _ProjectsPalette.primary,
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: GoogleFonts.spaceMono(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: _ProjectsPalette.primary,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1320,7 +1322,7 @@ class _CreateProjectModalState extends State<_CreateProjectModal> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedRuntime,
+                  value: _selectedRuntime,
                   dropdownColor: _ProjectsPalette.surfaceBody,
                   style: GoogleFonts.spaceMono(color: Colors.white),
                   decoration: InputDecoration(
