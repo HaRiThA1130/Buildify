@@ -2,7 +2,7 @@
 
 Flutter Android app that turns a phone into a **local LLM HTTP server** on your Wi‑Fi: pick a GGUF model, start the server, and other devices call OpenAI-compatible endpoints (e.g. `/v1/chat/completions`) on the phone’s LAN IP.
 
-**Stack:** Flutter UI → MethodChannel → Kotlin foreground service → [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` → GGUF on device.
+**Stack:** Flutter UI → MethodChannel → Kotlin foreground service → [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` → GGUF on your device.
 
 ## Requirements
 
