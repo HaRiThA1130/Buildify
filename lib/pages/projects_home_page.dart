@@ -8,7 +8,6 @@ import '../models/ai_server_models.dart';
 import '../providers/ai_server_provider.dart';
 import '../backend/embedded_backend.dart';
 import 'service_detail_page.dart';
-import 'host_project_wizard.dart';
 
 /// Projects dashboard — visual match for the buildify HTML mock.
 class ProjectsHomePage extends ConsumerStatefulWidget {
@@ -162,20 +161,10 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.6),
       builder: (ctx) => _NewServiceModal(
-        onHostProject: () {
-          Navigator.pop(ctx);
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const HostProjectSourcePage(),
-            ),
-          );
-        },
         onRunAiModel: () {
           Navigator.pop(ctx);
           widget.onRunAiModel?.call();
         },
-        onCreateDb: () => Navigator.pop(ctx),
       ),
     );
   }
@@ -1052,14 +1041,10 @@ class _NewServiceButtonState extends State<_NewServiceButton>
 
 class _NewServiceModal extends StatelessWidget {
   const _NewServiceModal({
-    required this.onHostProject,
     required this.onRunAiModel,
-    required this.onCreateDb,
   });
 
-  final VoidCallback onHostProject;
   final VoidCallback onRunAiModel;
-  final VoidCallback onCreateDb;
 
   @override
   Widget build(BuildContext context) {
@@ -1106,21 +1091,9 @@ class _NewServiceModal extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 _ModalOption(
-                  icon: Icons.rocket_launch_outlined,
-                  label: 'host a project',
-                  onTap: onHostProject,
-                ),
-                const SizedBox(height: 12),
-                _ModalOption(
                   icon: Icons.psychology_outlined,
                   label: 'run an ai model',
                   onTap: onRunAiModel,
-                ),
-                const SizedBox(height: 12),
-                _ModalOption(
-                  icon: Icons.storage_outlined,
-                  label: 'create a db',
-                  onTap: onCreateDb,
                 ),
                 const SizedBox(height: 24),
                 Divider(color: Colors.white.withValues(alpha: 0.05)),
