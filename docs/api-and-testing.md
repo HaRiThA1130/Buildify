@@ -33,10 +33,23 @@ Example body:
 Response shape matches OpenAI-style chat completions (`choices`, `usage`, etc.).  
 llama.cpp may also include extra fields such as **`timings`** (prefill vs decode speed).
 
-## Legacy / simple completion
+## Legacy / simple completion (`/completion`)
 
 **POST** `/completion`  
 (Exact JSON schema depends on llama-server version; often `prompt`, `n_predict`, `temperature`.)
+
+> [!WARNING]
+> **Autocomplete vs. Chat**: The `/completion` endpoint performs **raw text completion**. If you are using an instruction-tuned model (like `qwen2-1_5b-instruct`), using raw text (e.g., `"prompt": "Hi, I am Navadeep."`) will cause the model to act like an autocomplete and simply continue the sentence. 
+> 
+> To get a conversational response, you **must** either:
+> 1. Use the `/v1/chat/completions` endpoint (Recommended - automatically formats the prompt).
+> 2. Format the prompt manually using the model's specific chat template (e.g. ChatML for Qwen) in the `/completion` request body:
+>    ```json
+>    {
+>      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nHi, I am Navadeep.<|im_end|>\n<|im_start|>assistant\n",
+>      "n_predict": 50
+>    }
+>    ```
 
 ## Postman
 
