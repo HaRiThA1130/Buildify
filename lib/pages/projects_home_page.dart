@@ -1195,16 +1195,48 @@ class _NewServiceModal extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lightbulb_outline,
+                          color: Color(0xFF10B981), size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Choose how you want to deploy on Buildify:',
+                          style: GoogleFonts.spaceMono(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF10B981),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 _ModalOption(
                   icon: Icons.rocket_launch_outlined,
                   label: 'host a project',
+                  subtitle:
+                      'Deploy web applications (Node.js, Python, Flask, Static HTML)',
                   onTap: onHostProject,
                 ),
                 const SizedBox(height: 12),
                 _ModalOption(
                   icon: Icons.psychology_outlined,
                   label: 'run an ai model',
+                  subtitle:
+                      'Launch a local GGUF AI model server (Llama 3 8B, etc.)',
                   onTap: onRunAiModel,
                 ),
                 const SizedBox(height: 24),
@@ -1236,11 +1268,13 @@ class _ModalOption extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.subtitle,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -1253,21 +1287,41 @@ class _ModalOption extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            color: Colors.white.withValues(alpha: 0.03),
           ),
           child: Row(
             children: [
-              Icon(icon, color: _ProjectsPalette.primary.withValues(alpha: 0.6)),
+              Icon(icon, color: _ProjectsPalette.primary.withValues(alpha: 0.8), size: 24),
               const SizedBox(width: 16),
-              Text(
-                label,
-                style: GoogleFonts.spaceMono(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                  color: _ProjectsPalette.primary,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.spaceMono(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: _ProjectsPalette.primary,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle!,
+                        style: GoogleFonts.spaceMono(
+                          fontSize: 10,
+                          color: const Color(0xFF8B949E),
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
+              const Icon(Icons.chevron_right, color: Color(0xFF8B949E), size: 18),
             ],
           ),
         ),
