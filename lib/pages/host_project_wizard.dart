@@ -635,49 +635,51 @@ class _GithubAppInstallSimulationPageState
                     const Divider(color: Color(0xFF30363D)),
                     const SizedBox(height: 12),
 
-                    RadioGroup<bool>(
-                      groupValue: _allRepos,
-                      onChanged: (val) {
-                        if (val != null) setState(() => _allRepos = val);
-                      },
-                      child: Column(
-                        children: [
-                          RadioListTile<bool>(
-                            value: true,
-                            title: Text(
-                              'All repositories',
-                              style: GoogleFonts.spaceMono(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white),
-                            ),
-                            subtitle: Text(
-                              'Access all current and future repositories.',
-                              style: GoogleFonts.spaceMono(
-                                  fontSize: 11, color: const Color(0xFF8B949E)),
-                            ),
-                            activeColor: const Color(0xFF238636),
-                            contentPadding: EdgeInsets.zero,
+                    Column(
+                      children: [
+                        RadioListTile<bool>(
+                          value: true,
+                          groupValue: _allRepos,
+                          onChanged: (val) {
+                            if (val != null) setState(() => _allRepos = val);
+                          },
+                          title: Text(
+                            'All repositories',
+                            style: GoogleFonts.spaceMono(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white),
                           ),
-                          RadioListTile<bool>(
-                            value: false,
-                            title: Text(
-                              'Only select repositories',
-                              style: GoogleFonts.spaceMono(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white),
-                            ),
-                            subtitle: Text(
-                              'Choose specific repositories to deploy.',
-                              style: GoogleFonts.spaceMono(
-                                  fontSize: 11, color: const Color(0xFF8B949E)),
-                            ),
-                            activeColor: const Color(0xFF238636),
-                            contentPadding: EdgeInsets.zero,
+                          subtitle: Text(
+                            'Access all current and future repositories.',
+                            style: GoogleFonts.spaceMono(
+                                fontSize: 11, color: const Color(0xFF8B949E)),
                           ),
-                        ],
-                      ),
+                          activeColor: const Color(0xFF238636),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        RadioListTile<bool>(
+                          value: false,
+                          groupValue: _allRepos,
+                          onChanged: (val) {
+                            if (val != null) setState(() => _allRepos = val);
+                          },
+                          title: Text(
+                            'Only select repositories',
+                            style: GoogleFonts.spaceMono(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            'Choose specific repositories to deploy.',
+                            style: GoogleFonts.spaceMono(
+                                fontSize: 11, color: const Color(0xFF8B949E)),
+                          ),
+                          activeColor: const Color(0xFF238636),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ],
                     ),
 
                     if (!_allRepos) ...[

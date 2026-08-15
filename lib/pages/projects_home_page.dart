@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/ai_server_models.dart';
 import '../providers/ai_server_provider.dart';
 import '../backend/embedded_backend.dart';
+import '../services/guided_tour_service.dart';
+import '../widgets/guided_tour_overlay.dart';
 import 'host_project_wizard.dart';
 import 'service_detail_page.dart';
 
@@ -29,6 +31,11 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
   bool _productionExpanded = true;
   final _searchController = TextEditingController();
   late final AnimationController _meshController;
+
+  final _topBarKey = GlobalKey();
+  final _searchKey = GlobalKey();
+  final _addServiceKey = GlobalKey();
+  final _serviceCardKey = GlobalKey();
 
   List<_ServiceData> getServices(
     AiServerState state,
@@ -138,6 +145,53 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
       duration: const Duration(seconds: 20),
     )..repeat(reverse: true);
     _searchController.addListener(() => setState(() {}));
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndStartTour();
+    });
+  }
+
+  List<GuidedTourStep> _buildTourSteps() {
+    return [
+      GuidedTourStep(
+        title: 'Welcome to Buildify',
+        description:
+            'Host fullstack web applications and run local GGUF LLM models right on your mobile device.',
+        targetKey: _topBarKey,
+        tooltipPosition: TooltipPosition.bottom,
+      ),
+      GuidedTourStep(
+        title: 'Deploy & Host Services',
+        description:
+            'Tap "+ Add New" to deploy a web app (Node.js, Python, Flask, Static) or launch a local AI model.',
+        targetKey: _addServiceKey,
+        tooltipPosition: TooltipPosition.bottom,
+      ),
+      GuidedTourStep(
+        title: 'Search & Quick Filters',
+        description:
+            'Filter running microservices or search across your active resource ecosystem.',
+        targetKey: _searchKey,
+        tooltipPosition: TooltipPosition.bottom,
+      ),
+      GuidedTourStep(
+        title: 'Telemetry & Control',
+        description:
+            'Tap any service card to view live server logs, hardware metrics, thermal limits, and API endpoints.',
+        targetKey: _serviceCardKey,
+        tooltipPosition: TooltipPosition.top,
+      ),
+    ];
+  }
+
+  void _checkAndStartTour() {
+    ref
+        .read(guidedTourNotifierProvider.notifier)
+        .checkAndAutoStartTour(_buildTourSteps());
+  }
+
+  void _triggerReplayTour() {
+    ref.read(guidedTourNotifierProvider.notifier).startTour(_buildTourSteps());
   }
 
   @override
@@ -191,58 +245,67 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
         scaffoldBackgroundColor: _ProjectsPalette.surfaceBody,
         textTheme: GoogleFonts.spaceMonoTextTheme(ThemeData.dark().textTheme),
       ),
-      child: Scaffold(
-        backgroundColor: _ProjectsPalette.surfaceBody,
-        body: Stack(
-          children: [
-            _MeshBackground(animation: _meshController),
-            SafeArea(
-              child: Column(
-                children: [
-                  _ProjectsTopBar(horizontalPadding: horizontalPadding),
-                  Expanded(
-                    child: ListView(
-                      padding: EdgeInsets.fromLTRB(
-                        horizontalPadding,
-                        24,
-                        horizontalPadding,
-                        96,
-                      ),
-                      children: [
-                        _StaggeredFadeIn(
-                          children: [
-                            _SearchSection(
-                              controller: _searchController,
-                              filters: _filters,
-                              selectedFilter: _selectedFilter,
-                              onFilterSelected: (i) =>
-                                  setState(() => _selectedFilter = i),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        _StaggeredFadeIn(
-                          delayOffset: 1,
-                          children: [
-                            _EnvironmentSection(
-                              expanded: _productionExpanded,
-                              onToggle: () => setState(
-                                () => _productionExpanded = !_productionExpanded,
-                              ),
-                              services: _filteredServices(
-                                getServices(state, customProjects),
-                              ),
-                              onNewService: _openNewServiceModal,
-                            ),
-                          ],
-                        ),
-                      ],
+      child: GuidedTourOverlay(
+        child: Scaffold(
+          backgroundColor: _ProjectsPalette.surfaceBody,
+          body: Stack(
+            children: [
+              _MeshBackground(animation: _meshController),
+              SafeArea(
+                child: Column(
+                  children: [
+                    _ProjectsTopBar(
+                      key: _topBarKey,
+                      horizontalPadding: horizontalPadding,
+                      onReplayTour: _triggerReplayTour,
                     ),
-                  ),
-                ],
+                    Expanded(
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalPadding,
+                          24,
+                          horizontalPadding,
+                          96,
+                        ),
+                        children: [
+                          _StaggeredFadeIn(
+                            children: [
+                              _SearchSection(
+                                key: _searchKey,
+                                controller: _searchController,
+                                filters: _filters,
+                                selectedFilter: _selectedFilter,
+                                onFilterSelected: (i) =>
+                                    setState(() => _selectedFilter = i),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          _StaggeredFadeIn(
+                            delayOffset: 1,
+                            children: [
+                              _EnvironmentSection(
+                                expanded: _productionExpanded,
+                                onToggle: () => setState(
+                                  () => _productionExpanded = !_productionExpanded,
+                                ),
+                                services: _filteredServices(
+                                  getServices(state, customProjects),
+                                ),
+                                onNewService: _openNewServiceModal,
+                                newServiceKey: _addServiceKey,
+                                firstCardKey: _serviceCardKey,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -367,9 +430,14 @@ class _MeshBackground extends StatelessWidget {
 }
 
 class _ProjectsTopBar extends StatelessWidget {
-  const _ProjectsTopBar({required this.horizontalPadding});
+  const _ProjectsTopBar({
+    super.key,
+    required this.horizontalPadding,
+    this.onReplayTour,
+  });
 
   final double horizontalPadding;
+  final VoidCallback? onReplayTour;
 
   @override
   Widget build(BuildContext context) {
@@ -421,6 +489,11 @@ class _ProjectsTopBar extends StatelessWidget {
           ),
           const Spacer(),
           IconButton(
+            onPressed: onReplayTour,
+            icon: const Icon(Icons.help_outline, color: _ProjectsPalette.onSurface),
+            tooltip: 'Guided Tour',
+          ),
+          IconButton(
             onPressed: () {},
             icon: const Icon(Icons.person_outline, color: _ProjectsPalette.onSurface),
           ),
@@ -432,6 +505,7 @@ class _ProjectsTopBar extends StatelessWidget {
 
 class _SearchSection extends StatelessWidget {
   const _SearchSection({
+    super.key,
     required this.controller,
     required this.filters,
     required this.selectedFilter,
@@ -525,12 +599,16 @@ class _EnvironmentSection extends StatelessWidget {
     required this.onToggle,
     required this.services,
     required this.onNewService,
+    this.newServiceKey,
+    this.firstCardKey,
   });
 
   final bool expanded;
   final VoidCallback onToggle;
   final List<_ServiceData> services;
   final VoidCallback onNewService;
+  final Key? newServiceKey;
+  final Key? firstCardKey;
 
   @override
   Widget build(BuildContext context) {
@@ -582,11 +660,21 @@ class _EnvironmentSection extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         if (expanded) ...[
-          ...services.map((s) => Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: _ServiceCard(data: s),
-              )),
-          _NewServiceButton(onPressed: onNewService),
+          ...services.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final s = entry.value;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: _ServiceCard(
+                key: idx == 0 ? firstCardKey : null,
+                data: s,
+              ),
+            );
+          }),
+          _NewServiceButton(
+            key: newServiceKey,
+            onPressed: onNewService,
+          ),
         ],
       ],
     );
@@ -594,7 +682,10 @@ class _EnvironmentSection extends StatelessWidget {
 }
 
 class _ServiceCard extends StatefulWidget {
-  const _ServiceCard({required this.data});
+  const _ServiceCard({
+    super.key,
+    required this.data,
+  });
 
   final _ServiceData data;
 
@@ -950,7 +1041,10 @@ class _MetaCell extends StatelessWidget {
 }
 
 class _NewServiceButton extends StatefulWidget {
-  const _NewServiceButton({required this.onPressed});
+  const _NewServiceButton({
+    super.key,
+    required this.onPressed,
+  });
 
   final VoidCallback onPressed;
 
@@ -1313,7 +1407,7 @@ class _CreateProjectModalState extends State<_CreateProjectModal> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedRuntime,
+                  value: _selectedRuntime,
                   dropdownColor: _ProjectsPalette.surfaceBody,
                   style: GoogleFonts.spaceMono(color: Colors.white),
                   decoration: InputDecoration(
