@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/ai_server_models.dart';
 import '../providers/ai_server_provider.dart';
+import '../services/guided_tour_service.dart';
+import '../widgets/guided_tour_overlay.dart';
 import 'service_detail_page.dart';
 
 /// Model picker — matches the "select ai model" HTML screen.
@@ -25,6 +27,10 @@ class _AiModelSelectPageState extends ConsumerState<AiModelSelectPage> {
   String? _sizeFilter; // null = all, 'small', 'medium'
   String? _selectedId;
 
+  final _searchFilterKey = GlobalKey();
+  final _importCustomKey = GlobalKey();
+  final _firstModelCardKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -32,7 +38,36 @@ class _AiModelSelectPageState extends ConsumerState<AiModelSelectPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final id = ref.read(aiServerProvider).selectedModelId;
       if (id.isNotEmpty) setState(() => _selectedId = id);
+
+      _startAiModelTour();
     });
+  }
+
+  void _startAiModelTour() {
+    final steps = [
+      GuidedTourStep(
+        title: 'Search & Size Filters',
+        description:
+            'Search GGUF models by architecture or filter by memory footprint (Small / Medium).',
+        targetKey: _searchFilterKey,
+        tooltipPosition: TooltipPosition.bottom,
+      ),
+      GuidedTourStep(
+        title: 'Import Custom Models',
+        description:
+            'Clone GGUF models directly from HuggingFace repos or upload local weights.',
+        targetKey: _importCustomKey,
+        tooltipPosition: TooltipPosition.bottom,
+      ),
+      GuidedTourStep(
+        title: 'Select & Run AI Engine',
+        description:
+            'Tap any model card (e.g. Llama 3 8B) to download weights and start the llama.cpp server.',
+        targetKey: _firstModelCardKey,
+        tooltipPosition: TooltipPosition.top,
+      ),
+    ];
+    ref.read(guidedTourNotifierProvider.notifier).startTour(steps);
   }
 
   @override
@@ -104,87 +139,98 @@ class _AiModelSelectPageState extends ConsumerState<AiModelSelectPage> {
         scaffoldBackgroundColor: _SelectPalette.background,
         textTheme: GoogleFonts.spaceMonoTextTheme(ThemeData.dark().textTheme),
       ),
-      child: Scaffold(
-        backgroundColor: _SelectPalette.background,
-        body: ColoredBox(
-          color: _SelectPalette.background,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              const Positioned.fill(child: _MeshGradientBackground()),
-              Positioned(
-                top: MediaQuery.sizeOf(context).height * 0.25,
-                right: -96,
-                child: _DecorOrb(size: 256, pulse: true),
-              ),
-              Positioned(
-                bottom: MediaQuery.sizeOf(context).height * 0.25,
-                left: -96,
-                child: const _DecorOrb(size: 384, pulse: false),
-              ),
-              ColoredBox(
-                color: _SelectPalette.background,
-                child: SafeArea(
-                  child: ListView(
-                padding: EdgeInsets.fromLTRB(
-                  horizontalPadding,
-                  16,
-                  horizontalPadding,
-                  96,
+      child: GuidedTourOverlay(
+        child: Scaffold(
+          backgroundColor: _SelectPalette.background,
+          body: ColoredBox(
+            color: _SelectPalette.background,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const Positioned.fill(child: _MeshGradientBackground()),
+                Positioned(
+                  top: MediaQuery.sizeOf(context).height * 0.25,
+                  right: -96,
+                  child: _DecorOrb(size: 256, pulse: true),
                 ),
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconButton(
-                      onPressed: () => Navigator.maybePop(context),
-                      icon: const Icon(Icons.arrow_back, color: _SelectPalette.primary),
-                      tooltip: 'back',
-                    ),
-                  ),
-                  _HeaderSection(),
-                  const SizedBox(height: 48),
-                  _SearchAndFilters(
-                    controller: _searchController,
-                    sizeFilter: _sizeFilter,
-                    onSizeFilter: (f) => setState(() => _sizeFilter = f),
-                  ),
-                  const SizedBox(height: 48),
-                  _ImportSection(
-                    onUpload: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Custom upload coming soon')),
-                      );
-                    },
-                    onClone: _openCloneModal,
-                  ),
-                  const SizedBox(height: 40),
-                  ...models.map(
-                    (m) => Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child: _ModelCard(
-                        model: m,
-                        download: state.downloads[m.id],
-                        selected: _selectedId == m.id,
-                        onContinue: () => unawaited(_onContinue(m.id)),
+                Positioned(
+                  bottom: MediaQuery.sizeOf(context).height * 0.25,
+                  left: -96,
+                  child: const _DecorOrb(size: 384, pulse: false),
+                ),
+                ColoredBox(
+                  color: _SelectPalette.background,
+                  child: SafeArea(
+                    child: ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        16,
+                        horizontalPadding,
+                        96,
                       ),
-                    ),
-                  ),
-                  if (models.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 32),
-                      child: Text(
-                        'no models match your filter',
-                        style: GoogleFonts.spaceMono(
-                          color: _SelectPalette.textDim,
-                          fontSize: 14,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: IconButton(
+                            onPressed: () => Navigator.maybePop(context),
+                            icon: const Icon(Icons.arrow_back,
+                                color: _SelectPalette.primary),
+                            tooltip: 'back',
+                          ),
                         ),
-                      ),
+                        _HeaderSection(),
+                        const SizedBox(height: 48),
+                        _SearchAndFilters(
+                          key: _searchFilterKey,
+                          controller: _searchController,
+                          sizeFilter: _sizeFilter,
+                          onSizeFilter: (f) => setState(() => _sizeFilter = f),
+                        ),
+                        const SizedBox(height: 48),
+                        _ImportSection(
+                          key: _importCustomKey,
+                          onUpload: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Custom upload coming soon')),
+                            );
+                          },
+                          onClone: _openCloneModal,
+                        ),
+                        const SizedBox(height: 40),
+                        ...models.asMap().entries.map(
+                          (entry) {
+                            final idx = entry.key;
+                            final m = entry.value;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 24),
+                              child: _ModelCard(
+                                key: idx == 0 ? _firstModelCardKey : null,
+                                model: m,
+                                download: state.downloads[m.id],
+                                selected: _selectedId == m.id,
+                                onContinue: () => unawaited(_onContinue(m.id)),
+                              ),
+                            );
+                          },
+                        ),
+                        if (models.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 32),
+                            child: Text(
+                              'no models match your filter',
+                              style: GoogleFonts.spaceMono(
+                                color: _SelectPalette.textDim,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -403,6 +449,7 @@ class _HeaderSection extends StatelessWidget {
 
 class _SearchAndFilters extends StatelessWidget {
   const _SearchAndFilters({
+    super.key,
     required this.controller,
     required this.sizeFilter,
     required this.onSizeFilter,
@@ -519,7 +566,11 @@ class _SizeFilterChip extends StatelessWidget {
 }
 
 class _ImportSection extends StatelessWidget {
-  const _ImportSection({required this.onUpload, required this.onClone});
+  const _ImportSection({
+    super.key,
+    required this.onUpload,
+    required this.onClone,
+  });
 
   final VoidCallback onUpload;
   final VoidCallback onClone;
@@ -651,6 +702,7 @@ class _ImportButton extends StatelessWidget {
 
 class _ModelCard extends StatefulWidget {
   const _ModelCard({
+    super.key,
     required this.model,
     required this.download,
     required this.selected,

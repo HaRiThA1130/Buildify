@@ -994,7 +994,7 @@ class _SecuritySection extends StatelessWidget {
                     Switch(
                       value: requireApiKey,
                       onChanged: onToggleRequire,
-                      activeThumbColor: _DetailPalette.primary,
+                      activeColor: _DetailPalette.primary,
                       activeTrackColor: _DetailPalette.outlineVariant,
                     ),
                   ],
@@ -1185,7 +1185,7 @@ class _HealthThresholdsSection extends StatelessWidget {
                     Switch(
                       value: thermalStop,
                       onChanged: onThermalChanged,
-                      activeThumbColor: _DetailPalette.primary,
+                      activeColor: _DetailPalette.primary,
                       activeTrackColor: _DetailPalette.outlineVariant,
                     ),
                   ],
@@ -1287,7 +1287,7 @@ class _RuntimeControlsSection extends StatelessWidget {
                     Switch(
                       value: lowPowerMode,
                       onChanged: onLowPowerChanged,
-                      activeThumbColor: _DetailPalette.primary,
+                      activeColor: _DetailPalette.primary,
                       activeTrackColor: _DetailPalette.outlineVariant,
                     ),
                   ],
