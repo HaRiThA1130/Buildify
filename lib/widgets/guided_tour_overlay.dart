@@ -37,13 +37,18 @@ class _GuidedTourOverlayState extends ConsumerState<GuidedTourOverlay>
   }
 
   Rect? _getRectForTarget(GlobalKey targetKey) {
-    final renderBox =
-        targetKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null || !renderBox.attached) return null;
+    final ctx = targetKey.currentContext;
+    if (ctx == null || !ctx.mounted) return null;
+    try {
+      final renderBox = ctx.findRenderObject() as RenderBox?;
+      if (renderBox == null || !renderBox.attached || !renderBox.hasSize) return null;
 
-    final position = renderBox.localToGlobal(Offset.zero);
-    final size = renderBox.size;
-    return position & size;
+      final position = renderBox.localToGlobal(Offset.zero);
+      final size = renderBox.size;
+      return position & size;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
