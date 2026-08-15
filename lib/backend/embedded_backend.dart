@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -38,6 +39,12 @@ class BackendProject {
     required this.isLive,
     this.hostingMode = HostingMode.persistent,
     this.localPath = '',
+    this.branch = 'main',
+    this.buildCommand = '',
+    this.publishDir = '',
+    this.baseDir = '',
+    this.port = 3000,
+    this.envVars = const {},
   });
 
   final String id;
@@ -48,6 +55,12 @@ class BackendProject {
   final bool isLive;
   final HostingMode hostingMode;
   final String localPath;
+  final String branch;
+  final String buildCommand;
+  final String publishDir;
+  final String baseDir;
+  final int port;
+  final Map<String, String> envVars;
 
   BackendProject copyWith({
     String? name,
@@ -57,6 +70,12 @@ class BackendProject {
     bool? isLive,
     HostingMode? hostingMode,
     String? localPath,
+    String? branch,
+    String? buildCommand,
+    String? publishDir,
+    String? baseDir,
+    int? port,
+    Map<String, String>? envVars,
   }) {
     return BackendProject(
       id: id,
@@ -67,6 +86,12 @@ class BackendProject {
       isLive: isLive ?? this.isLive,
       hostingMode: hostingMode ?? this.hostingMode,
       localPath: localPath ?? this.localPath,
+      branch: branch ?? this.branch,
+      buildCommand: buildCommand ?? this.buildCommand,
+      publishDir: publishDir ?? this.publishDir,
+      baseDir: baseDir ?? this.baseDir,
+      port: port ?? this.port,
+      envVars: envVars ?? this.envVars,
     );
   }
 }
@@ -194,6 +219,12 @@ class EmbeddedBackendService {
     try {
       final dbProjects = await DatabaseHelper.instance.getProjects();
       final loaded = dbProjects.map((row) {
+        Map<String, String> parsedEnv = {};
+        try {
+          if (row['env_vars'] != null) {
+            parsedEnv = Map<String, String>.from(jsonDecode(row['env_vars'] as String));
+          }
+        } catch (_) {}
         return BackendProject(
           id: row['id'] as String,
           name: row['name'] as String,
@@ -205,6 +236,12 @@ class EmbeddedBackendService {
               ? HostingMode.ephemeral
               : HostingMode.persistent,
           localPath: row['local_path'] as String,
+          branch: row['branch'] as String? ?? 'main',
+          buildCommand: row['build_command'] as String? ?? '',
+          publishDir: row['publish_dir'] as String? ?? '',
+          baseDir: row['base_dir'] as String? ?? '',
+          port: row['port'] as int? ?? 3000,
+          envVars: parsedEnv,
         );
       }).toList();
       _emit(_state.copyWith(projects: loaded));
@@ -223,6 +260,11 @@ class EmbeddedBackendService {
     String? customUrl,
     HostingMode hostingMode = HostingMode.persistent,
     String? customLocalPath,
+    String branch = 'main',
+    String buildCommand = '',
+    String publishDir = '',
+    String baseDir = '',
+    Map<String, String> envVars = const {},
   }) async {
     final slug = name.toLowerCase().replaceAll(' ', '-');
     final id = _uuid.v4();
@@ -244,6 +286,13 @@ class EmbeddedBackendService {
       }
     } catch (_) {}
 
+    int assignedPort = 3000;
+    final usedPorts = _state.projects.map((p) => p.port).toSet();
+    while (usedPorts.contains(assignedPort) && assignedPort < 3100) {
+      assignedPort++;
+    }
+    if (assignedPort >= 3100) throw Exception('Port exhaustion: maximum of 100 projects allowed.');
+
     final p = BackendProject(
       id: id,
       name: name,
@@ -253,6 +302,12 @@ class EmbeddedBackendService {
       isLive: false,
       hostingMode: hostingMode,
       localPath: localPath,
+      branch: branch,
+      buildCommand: buildCommand,
+      publishDir: publishDir,
+      baseDir: baseDir,
+      port: assignedPort,
+      envVars: envVars,
     );
 
     if (hostingMode == HostingMode.persistent) {
@@ -264,9 +319,13 @@ class EmbeddedBackendService {
           'hosting_mode': 'persistent',
           'source_uri': p.url,
           'local_path': p.localPath,
-          'port': 3000,
+          'port': p.port,
           'subdomain': slug,
-          'env_vars': '{}',
+          'env_vars': jsonEncode(p.envVars),
+          'branch': p.branch,
+          'build_command': p.buildCommand,
+          'publish_dir': p.publishDir,
+          'base_dir': p.baseDir,
           'desired_state': 'stopped',
           'created_at': DateTime.now().millisecondsSinceEpoch,
           'last_active_at': DateTime.now().millisecondsSinceEpoch,
