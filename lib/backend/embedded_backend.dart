@@ -7,6 +7,8 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../services/database_helper.dart';
+import '../services/static_site_server.dart';
+import '../services/native_server_bridge.dart';
 
 enum BackendLogType { request, error, system }
 enum HostingMode { persistent, ephemeral }
@@ -137,6 +139,8 @@ class BackendSession {
 
   BackendSession copyWith({
     bool? isRunning,
+    String? publicUrl,
+    String? tunnelProvider,
     int? requestCount,
     double? rps,
     bool? lowBattery,
@@ -146,8 +150,8 @@ class BackendSession {
       projectId: projectId,
       startedAt: startedAt,
       isRunning: isRunning ?? this.isRunning,
-      publicUrl: publicUrl,
-      tunnelProvider: tunnelProvider,
+      publicUrl: publicUrl ?? this.publicUrl,
+      tunnelProvider: tunnelProvider ?? this.tunnelProvider,
       requestCount: requestCount ?? this.requestCount,
       rps: rps ?? this.rps,
       lowBattery: lowBattery ?? this.lowBattery,
@@ -209,6 +213,8 @@ class EmbeddedBackendService {
   final _stateController = StreamController<BackendState>.broadcast();
   final _projectLogControllers = <String, StreamController<BackendLogEvent>>{};
   final _sessionControllers = <String, StreamController<BackendSession>>{};
+  final _staticServers = <String, StaticSiteServer>{};
+  final _nativeBridge = const NativeServerBridge();
   Timer? _ticker;
   BackendState _state;
 
@@ -415,13 +421,59 @@ class EmbeddedBackendService {
     String tunnelProvider = 'cloudflare',
   }) async {
     _ticker?.cancel();
+    
+    final project = _state.projects.firstWhere((p) => p.id == projectId);
+    
+    _log(
+      projectId,
+      'system',
+      '-- starting static site server on port ${project.port} --',
+      BackendLogType.system,
+    );
+
+    // Start static site server
+    final server = StaticSiteServer(
+      localPath: project.localPath,
+      port: project.port,
+      publishDir: project.publishDir,
+      onLog: (msg, {isError = false}) {
+        _log(
+          projectId,
+          'server',
+          msg,
+          isError ? BackendLogType.error : BackendLogType.request,
+        );
+      },
+    );
+    try {
+      await server.start();
+      _staticServers[projectId] = server;
+    } catch (e) {
+      _log(
+        projectId,
+        'system',
+        '[ERR] Failed to bind server port ${project.port}: $e',
+        BackendLogType.error,
+      );
+      rethrow;
+    }
+
+    _log(
+      projectId,
+      'system',
+      '-- starting cloudflare tunnel --',
+      BackendLogType.system,
+    );
+
+    // Start Cloudflare tunnel
+    await _nativeBridge.startTunnel(port: project.port);
+
     final session = BackendSession(
       id: _uuid.v4(),
       projectId: projectId,
       startedAt: DateTime.now(),
       isRunning: true,
-      publicUrl:
-          publicUrl ?? _state.projects.firstWhere((p) => p.id == projectId).url,
+      publicUrl: publicUrl ?? project.url,
       tunnelProvider: tunnelProvider,
       requestCount: 0,
       rps: 0,
@@ -429,48 +481,25 @@ class EmbeddedBackendService {
     );
     _updateProject(projectId, (p) => p.copyWith(isLive: true));
     _emit(_state.copyWith(activeSession: session));
-    _log(
-      projectId,
-      session.id,
-      '-- server started on :8080 --',
-      BackendLogType.system,
-    );
 
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+    // Poll for the tunnel public URL
+    _ticker = Timer.periodic(const Duration(seconds: 2), (_) async {
       final current = _state.activeSession;
       if (current == null || !current.isRunning) return;
-      final reqDelta = _rand.nextInt(4);
-      final lowBattery = current.lowBattery || (_rand.nextInt(40) == 0);
-      final next = current.copyWith(
-        requestCount: current.requestCount + reqDelta,
-        rps: reqDelta.toDouble(),
-        lowBattery: lowBattery,
-      );
-      _emit(_state.copyWith(activeSession: next));
 
-      if (reqDelta > 0) {
-        _log(
-          projectId,
-          session.id,
-          '[GET] /index.html 200 ${8 + _rand.nextInt(40)}ms',
-          BackendLogType.request,
-        );
-      }
-      if (_rand.nextInt(20) == 0) {
-        _log(
-          projectId,
-          session.id,
-          '[ERR] worker timeout on /api/status',
-          BackendLogType.error,
-        );
-      }
-      if (lowBattery && _rand.nextInt(8) == 0) {
-        _log(
-          projectId,
-          session.id,
-          '-- warning: battery below 20% while serving --',
-          BackendLogType.system,
-        );
+      final status = await _nativeBridge.getTunnelStatus();
+      if (status != null && status.publicUrl != null && status.publicUrl!.isNotEmpty) {
+         if (current.publicUrl != status.publicUrl) {
+           final next = current.copyWith(publicUrl: status.publicUrl);
+           _emit(_state.copyWith(activeSession: next));
+           
+           _log(
+              projectId,
+              current.id,
+              '-- tunnel active at ${status.publicUrl} --',
+              BackendLogType.system,
+           );
+         }
       }
     });
 
@@ -481,12 +510,21 @@ class EmbeddedBackendService {
     final current = _state.activeSession;
     if (current == null || current.id != sessionId) return;
     _ticker?.cancel();
+    
     _log(
       current.projectId,
       sessionId,
-      '-- server stopped --',
+      '-- stopping server and tunnel --',
       BackendLogType.system,
     );
+    
+    // Stop static server
+    await _staticServers[current.projectId]?.stop();
+    _staticServers.remove(current.projectId);
+    
+    // Stop tunnel
+    await _nativeBridge.stopTunnel();
+
     _updateProject(current.projectId, (p) => p.copyWith(isLive: false));
     _emit(_state.copyWith(activeSession: null));
 

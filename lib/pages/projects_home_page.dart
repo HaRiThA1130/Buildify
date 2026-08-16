@@ -11,6 +11,7 @@ import '../services/guided_tour_service.dart';
 import '../widgets/guided_tour_overlay.dart';
 import 'host_project_wizard.dart';
 import 'service_detail_page.dart';
+import 'project_detail_page.dart';
 
 /// Projects dashboard — visual match for the buildify HTML mock.
 class ProjectsHomePage extends ConsumerStatefulWidget {
@@ -91,8 +92,14 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
         );
       },
     );
+    final activeSession = ref.watch(backendStateProvider).value?.activeSession;
 
     final customCards = customProjects.map((p) {
+      final isThisProjectActive = activeSession != null && activeSession.projectId == p.id;
+      final liveUrl = isThisProjectActive
+          ? activeSession.publicUrl
+          : (p.isLive ? 'http://localhost:${p.port}' : 'stopped');
+
       return _ServiceData(
         name: p.name,
         statusIcon:
@@ -104,30 +111,28 @@ class _ProjectsHomePageState extends ConsumerState<ProjectsHomePage>
             p.isLive ? const Color(0xFF065F46) : const Color(0xFF374151),
         version: p.hostingMode == HostingMode.ephemeral ? 'sandbox' : 'prod-sqlite',
         runtime: p.repoProvider,
-        region: p.isLive ? 'localhost:3000' : 'stopped',
+        region: liveUrl,
         updated: p.lastDeployedAt != null ? 'active' : 'just created',
-        actionLabel: p.isLive ? 'stop server' : 'start server',
-        actionIcon: p.isLive ? Icons.stop : Icons.play_arrow,
+        actionLabel: p.isLive
+            ? 'active (tap to manage)'
+            : 'start server (tap to manage)',
+        actionIcon: p.isLive ? Icons.insights_outlined : Icons.play_arrow,
         actionPrimary: !p.isLive,
         metadataBorderBright: p.isLive,
         isEphemeral: p.hostingMode == HostingMode.ephemeral,
         projectId: p.id,
-        onTap: () async {
-          final backend = ref.read(embeddedBackendProvider);
-          if (p.isLive) {
-            final active = backend.state.activeSession;
-            if (active != null && active.projectId == p.id) {
-              await backend.stopSession(sessionId: active.id);
-            }
-          } else {
-            await backend.startSession(projectId: p.id);
-          }
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ProjectDetailPage(projectId: p.id),
+            ),
+          );
         },
         onDelete: () async {
           await ref.read(embeddedBackendProvider).deleteProject(p.id);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Deleted \${p.name}')),
+              SnackBar(content: Text('Deleted ${p.name}')),
             );
           }
         },

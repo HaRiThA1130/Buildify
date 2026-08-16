@@ -53,31 +53,26 @@ class GitService {
       final bytes = zipRes.bodyBytes;
       final archive = ZipDecoder().decodeBytes(bytes);
       
-      final rootDirName = '$repo-$defaultBranch/';
-
       for (final file in archive) {
         final filename = file.name;
-        if (file.isFile) {
-          // Remove the root wrapper folder from the path
-          final relativePath = filename.startsWith(rootDirName) 
-              ? filename.substring(rootDirName.length) 
-              : filename;
-              
-          if (relativePath.isEmpty) continue;
+        // GitHub zip archives always wrap all files in a single root folder (e.g. 'repo-branch/').
+        // Strip the first folder segment to extract directly into localPath:
+        final slashIndex = filename.indexOf('/');
+        final relativePath = slashIndex != -1 
+            ? filename.substring(slashIndex + 1) 
+            : filename;
+            
+        if (relativePath.isEmpty) continue;
 
+        final outPath = '$localPath/$relativePath';
+
+        if (file.isFile) {
           final data = file.content as List<int>;
-          final outFile = File('$localPath/$relativePath');
+          final outFile = File(outPath);
           await outFile.create(recursive: true);
           await outFile.writeAsBytes(data);
         } else {
-          // It's a directory
-          final relativePath = filename.startsWith(rootDirName) 
-              ? filename.substring(rootDirName.length) 
-              : filename;
-              
-          if (relativePath.isNotEmpty) {
-            await Directory('$localPath/$relativePath').create(recursive: true);
-          }
+          await Directory(outPath).create(recursive: true);
         }
       }
 
