@@ -8,6 +8,7 @@ import '../backend/embedded_backend.dart';
 import '../providers/ai_server_provider.dart';
 import '../services/guided_tour_service.dart';
 import '../widgets/guided_tour_overlay.dart';
+import '../services/git_service.dart';
 
 class _WizardPalette {
   static const surfaceBody = Color(0xFF131312); // Matches dashboard
@@ -33,7 +34,13 @@ class _HostProjectSourcePageState
   bool _isHoveringGit = false;
   final _gitRepoKey = GlobalKey();
   final _localUploadKey = GlobalKey();
+  final _urlController = TextEditingController();
 
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
   @override
   void initState() {
     super.initState();
@@ -154,6 +161,55 @@ class _HostProjectSourcePageState
                       ),
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      const Expanded(child: Divider(color: _WizardPalette.outline)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'OR',
+                          style: GoogleFonts.spaceMono(
+                            fontSize: 12,
+                            color: _WizardPalette.textDim,
+                          ),
+                        ),
+                      ),
+                      const Expanded(child: Divider(color: _WizardPalette.outline)),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  // Paste Repo URL Input
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: _WizardPalette.outline),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.link, color: _WizardPalette.textDim, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _urlController,
+                            style: GoogleFonts.spaceMono(fontSize: 14, color: _WizardPalette.primary),
+                            decoration: InputDecoration(
+                              hintText: 'https://github.com/owner/repo',
+                              hintStyle: GoogleFonts.spaceMono(color: _WizardPalette.textDim),
+                              border: InputBorder.none,
+                            ),
+                            onSubmitted: (val) => _handleUrlSubmit(val, context),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_forward, color: _WizardPalette.primary),
+                          onPressed: () => _handleUrlSubmit(_urlController.text, context),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 56),
 
                   // --- Upload Section ---
@@ -257,6 +313,30 @@ class _HostProjectSourcePageState
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _handleUrlSubmit(String url, BuildContext context) {
+    url = url.trim();
+    if (url.isEmpty) return;
+
+    // Very basic parsing to get a repo name
+    String repoName = 'my-project';
+    try {
+      final uri = Uri.parse(url);
+      if (uri.pathSegments.isNotEmpty) {
+        repoName = uri.pathSegments.last.replaceAll('.git', '');
+      }
+    } catch (_) {}
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => HostProjectSettingsPage(
+          repoName: repoName,
+          repoUrl: url,
         ),
       ),
     );
@@ -944,8 +1024,13 @@ class _HostProjectSelectPageState extends State<HostProjectSelectPage> {
 // PAGE 5: Build Settings & Configuration
 // ==========================================
 class HostProjectSettingsPage extends ConsumerStatefulWidget {
-  const HostProjectSettingsPage({super.key, required this.repoName});
+  const HostProjectSettingsPage({
+    super.key, 
+    required this.repoName,
+    this.repoUrl,
+  });
   final String repoName;
+  final String? repoUrl;
 
   @override
   ConsumerState<HostProjectSettingsPage> createState() =>
@@ -965,6 +1050,9 @@ class _HostProjectSettingsPageState
   final _nameKey = GlobalKey();
   final _branchKey = GlobalKey();
   final _deployKey = GlobalKey();
+
+  bool _isDeploying = false;
+  String _deployProgress = '';
 
   @override
   void initState() {
@@ -1346,18 +1434,50 @@ class _HostProjectSettingsPageState
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  onPressed: () async {
+                  onPressed: _isDeploying ? null : () async {
                     final name = _nameController.text.trim();
                     if (name.isEmpty) return;
 
+                    setState(() {
+                      _isDeploying = true;
+                      _deployProgress = 'Initializing...';
+                    });
+
                     try {
-                      // Create the project in the backend
-                      await ref.read(embeddedBackendProvider).createProject(
+                      final envMap = <String, String>{};
+                      for (final entry in _envVars) {
+                        final k = entry.key.text.trim();
+                        final v = entry.value.text.trim();
+                        if (k.isNotEmpty) {
+                          envMap[k] = v;
+                        }
+                      }
+
+                      // Create the project in the backend (this allocates port and path)
+                      final project = await ref.read(embeddedBackendProvider).createProject(
                             name: name,
                             sourceType: 'GitHub',
                             customUrl: previewUrl,
                             hostingMode: HostingMode.persistent,
+                            branch: _branchController.text.trim().isNotEmpty ? _branchController.text.trim() : 'main',
+                            buildCommand: _buildCommandController.text.trim(),
+                            publishDir: _publishDirController.text.trim(),
+                            baseDir: _baseDirController.text.trim(),
+                            envVars: envMap,
                           );
+
+                      // Now clone the repo into the project's localPath if we have a URL
+                      if (widget.repoUrl != null && widget.repoUrl!.isNotEmpty) {
+                        await GitService.cloneRepository(
+                          repoUrl: widget.repoUrl!,
+                          localPath: project.localPath,
+                          onProgress: (status) {
+                            if (context.mounted) {
+                              setState(() => _deployProgress = status);
+                            }
+                          },
+                        );
+                      }
 
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1379,15 +1499,43 @@ class _HostProjectSettingsPageState
                           ),
                         );
                       }
+                    } finally {
+                      if (context.mounted) {
+                        setState(() {
+                          _isDeploying = false;
+                        });
+                      }
                     }
                   },
-                  child: Text(
-                    'Deploy $projName',
-                    style: GoogleFonts.spaceMono(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                  ),
+                  child: _isDeploying
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _deployProgress,
+                              style: GoogleFonts.spaceMono(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Text(
+                          'Deploy $projName',
+                          style: GoogleFonts.spaceMono(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 40),
               ],

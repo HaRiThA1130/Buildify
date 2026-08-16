@@ -20,9 +20,19 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE projects ADD COLUMN branch TEXT DEFAULT \'main\'');
+      await db.execute('ALTER TABLE projects ADD COLUMN build_command TEXT');
+      await db.execute('ALTER TABLE projects ADD COLUMN publish_dir TEXT');
+      await db.execute('ALTER TABLE projects ADD COLUMN base_dir TEXT');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -37,6 +47,10 @@ class DatabaseHelper {
         port INTEGER NOT NULL,
         subdomain TEXT,
         env_vars TEXT,
+        branch TEXT DEFAULT 'main',
+        build_command TEXT,
+        publish_dir TEXT,
+        base_dir TEXT,
         desired_state TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         last_active_at INTEGER NOT NULL

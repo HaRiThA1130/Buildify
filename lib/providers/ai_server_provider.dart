@@ -31,6 +31,11 @@ final backendProjectsProvider = StreamProvider<List<BackendProject>>((ref) {
   return service.stream.map((state) => state.projects).distinct();
 });
 
+final backendStateProvider = StreamProvider<BackendState>((ref) {
+  final service = ref.watch(embeddedBackendProvider);
+  return service.stream;
+});
+
 class AiServerController extends StateNotifier<AiServerState> {
   AiServerController()
       : super(
